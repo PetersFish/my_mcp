@@ -12,7 +12,10 @@ const {
   doctor,
   uninstall,
   loadUserConfig,
+  findCommand,
+  spawnOptions,
 } = require("../lib/install.js");
+const { resolveHome } = require("../lib/user-config.js");
 
 const PACKAGE_ROOT = path.join(__dirname, "..");
 
@@ -100,6 +103,12 @@ process.exit(0);
 `
   );
   fs.chmodSync(file, 0o755);
+  if (process.platform === "win32") {
+    fs.writeFileSync(
+      path.join(binDir, `${name}.cmd`),
+      `@echo off\r\nnode "${file}" %*\r\n`
+    );
+  }
 }
 
 function readLog(logPath) {
@@ -127,9 +136,13 @@ function createHarness(t) {
     "/bin",
     "/usr/local/bin",
   ];
+  if (process.platform === "win32" && process.env.SystemRoot) {
+    pathDirs.push(path.join(process.env.SystemRoot, "System32"));
+  }
   const env = {
     ...process.env,
     HOME: home,
+    USERPROFILE: home,
     PATH: pathDirs.join(path.delimiter),
     FAKE_CLI_LOG: logPath,
     FAKE_CLI_STATE: statePath,
@@ -183,8 +196,10 @@ test("first setup writes config.env with 600 and registers both CLIs", async (t)
 
   const configPath = path.join(home, ".config", "ocr-vlm", "config.env");
   assert.equal(fs.existsSync(configPath), true);
-  const mode = fs.statSync(configPath).mode & 0o777;
-  assert.equal(mode, 0o600);
+  if (process.platform !== "win32") {
+    const mode = fs.statSync(configPath).mode & 0o777;
+    assert.equal(mode, 0o600);
+  }
   const loaded = loadUserConfig(home);
   assert.equal(loaded.VISION_API_KEY, "test-key");
   assert.equal(loaded.VISION_MODEL, "qwen-vl-plus");
@@ -260,7 +275,8 @@ test("--client claude does not invoke opencode", async (t) => {
 
 test("setup skips a missing client CLI instead of failing", async (t) => {
   const { home, binDir, env } = createHarness(t);
-  fs.rmSync(path.join(binDir, "opencode"));
+  fs.rmSync(path.join(binDir, "opencode"), { force: true });
+  fs.rmSync(path.join(binDir, "opencode.cmd"), { force: true });
   const result = await setup({
     home,
     env,
@@ -314,5 +330,56 @@ test("uninstall removes MCP entries and --purge deletes config.env", async (t) =
       path.join(home, ".config", "opencode", "skills", "media-ocr-router", "SKILL.md")
     ),
     false
+  );
+});
+
+test("findCommand uses where on Windows and prefers .cmd", () => {
+  const calls = [];
+  const found = findCommand("claude", {}, {
+    platform: "win32",
+    run(cmd, args, opts) {
+      calls.push({ cmd, args, shell: opts.shell });
+      return {
+        status: 0,
+        stdout: "C:\\Tools\\claude.exe\r\nC:\\Tools\\claude.cmd\r\n",
+      };
+    },
+  });
+  assert.equal(calls[0].cmd, "where");
+  assert.equal(calls[0].args[0], "claude");
+  assert.equal(calls[0].shell, true);
+  assert.equal(found, "C:\\Tools\\claude.cmd");
+});
+
+test("findCommand uses which on Unix", () => {
+  const calls = [];
+  const found = findCommand("claude", {}, {
+    platform: "darwin",
+    run(cmd, args, opts) {
+      calls.push({ cmd, args, shell: opts.shell });
+      return { status: 0, stdout: "/usr/local/bin/claude\n" };
+    },
+  });
+  assert.equal(calls[0].cmd, "which");
+  assert.equal(calls[0].shell, undefined);
+  assert.equal(found, "/usr/local/bin/claude");
+});
+
+test("spawnOptions enables shell on Windows", () => {
+  const win = spawnOptions({ env: {} }, "win32");
+  assert.equal(win.shell, true);
+  assert.equal(win.windowsHide, true);
+  const unix = spawnOptions({ env: {} }, "darwin");
+  assert.equal(unix.shell, undefined);
+});
+
+test("resolveHome prefers USERPROFILE when HOME is unset", () => {
+  assert.equal(
+    resolveHome({ USERPROFILE: "C:\\Users\\dev" }),
+    "C:\\Users\\dev"
+  );
+  assert.equal(
+    resolveHome({ HOME: "/Users/dev", USERPROFILE: "C:\\Users\\dev" }),
+    "/Users/dev"
   );
 });

@@ -1,7 +1,6 @@
 "use strict";
 
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 const {
@@ -9,6 +8,7 @@ const {
   loadUserConfig,
   saveUserConfig,
   applyUserConfigToProcessEnv,
+  resolveHome,
 } = require("./user-config.js");
 
 const SERVER_NAME = "ocr-vlm";
@@ -61,21 +61,46 @@ function assertNodeVersion() {
 function ensureDependencies(packageRoot) {
   const marker = path.join(packageRoot, "node_modules", "@modelcontextprotocol");
   if (fs.existsSync(marker)) return;
-  const result = spawnSync("npm", ["install"], {
+  const result = spawnSync("npm", ["install"], spawnOptions({
     cwd: packageRoot,
-    encoding: "utf8",
     stdio: "inherit",
-  });
+  }));
   if (result.status !== 0) {
     throw new Error("npm install 失败");
   }
 }
 
-function findCommand(name, env) {
-  const result = spawnSync("which", [name], { env, encoding: "utf8" });
-  if (result.status === 0) {
-    const found = (result.stdout || "").trim();
-    if (found) return found;
+function spawnOptions(extra = {}, platform = process.platform) {
+  const options = { encoding: "utf8", ...extra };
+  if (platform === "win32") {
+    if (extra.shell === undefined) options.shell = true;
+    if (extra.windowsHide === undefined) options.windowsHide = true;
+  }
+  return options;
+}
+
+function pickCommandHit(stdout, platform) {
+  const lines = String(stdout || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return null;
+  if (platform === "win32") {
+    const cmd = lines.find((line) => /\.(cmd|bat)$/i.test(line));
+    if (cmd) return cmd;
+    const exe = lines.find((line) => /\.exe$/i.test(line));
+    if (exe) return exe;
+  }
+  return lines[0];
+}
+
+function findCommand(name, env, options = {}) {
+  const platform = options.platform || process.platform;
+  const run = options.run || spawnSync;
+  const lookup = platform === "win32" ? "where" : "which";
+  const result = run(lookup, [name], spawnOptions({ env }, platform));
+  if (result && result.status === 0) {
+    return pickCommandHit(result.stdout, platform);
   }
   return null;
 }
@@ -114,7 +139,7 @@ function copySkill(srcDir, destDir) {
 }
 
 function runCaptured(command, args, env) {
-  return spawnSync(command, args, { env, encoding: "utf8" });
+  return spawnSync(command, args, spawnOptions({ env }));
 }
 
 async function defaultPrompt(question) {
@@ -277,7 +302,7 @@ function probeMcpInitialize(packageRoot, home, env) {
   return new Promise((resolve, reject) => {
     const bin = path.join(packageRoot, "bin", "ocr-vlm-mcp.js");
     const child = spawn(process.execPath, [bin], {
-      env: { ...env, HOME: home },
+      env: { ...env, HOME: home, USERPROFILE: home },
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -324,7 +349,7 @@ function probeMcpInitialize(packageRoot, home, env) {
 }
 
 async function setup(options) {
-  const home = options.home || os.homedir();
+  const home = options.home || resolveHome(options.env || process.env);
   const env = options.env || process.env;
   const packageRoot = options.packageRoot;
   const client = options.client || "all";
@@ -373,7 +398,7 @@ async function setup(options) {
 }
 
 async function doctor(options) {
-  const home = options.home || os.homedir();
+  const home = options.home || resolveHome(options.env || process.env);
   const env = options.env || process.env;
   const packageRoot = options.packageRoot;
   const issues = [];
@@ -404,7 +429,7 @@ async function doctor(options) {
 }
 
 async function uninstall(options) {
-  const home = options.home || os.homedir();
+  const home = options.home || resolveHome(options.env || process.env);
   const env = options.env || process.env;
   const client = options.client || "all";
   const messages = [];
@@ -432,4 +457,6 @@ module.exports = {
   loadUserConfig,
   applyUserConfigToProcessEnv,
   findCommand,
+  spawnOptions,
+  resolveHome,
 };

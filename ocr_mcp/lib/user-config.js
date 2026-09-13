@@ -12,11 +12,15 @@ const ENV_KEYS = [
   "VISION_OCR_MAX_TOKENS",
 ];
 
-function configDir(home = os.homedir()) {
+function resolveHome(env = process.env) {
+  return env.HOME || env.USERPROFILE || os.homedir();
+}
+
+function configDir(home = resolveHome()) {
   return path.join(home, ".config", "ocr-vlm");
 }
 
-function configFile(home = os.homedir()) {
+function configFile(home = resolveHome()) {
   return path.join(configDir(home), "config.env");
 }
 
@@ -49,7 +53,7 @@ function serializeEnv(values) {
   return `${lines.join("\n")}\n`;
 }
 
-function loadUserConfig(home = os.homedir()) {
+function loadUserConfig(home = resolveHome()) {
   const file = configFile(home);
   if (!fs.existsSync(file)) return {};
   return parseEnvFile(fs.readFileSync(file, "utf8"));
@@ -60,11 +64,15 @@ function saveUserConfig(home, values) {
   fs.mkdirSync(dir, { recursive: true });
   const file = configFile(home);
   fs.writeFileSync(file, serializeEnv(values), { mode: 0o600 });
-  fs.chmodSync(file, 0o600);
+  try {
+    fs.chmodSync(file, 0o600);
+  } catch {
+    // NTFS does not honor Unix permission bits.
+  }
   return file;
 }
 
-function applyUserConfigToProcessEnv(home = process.env.HOME || os.homedir()) {
+function applyUserConfigToProcessEnv(home = resolveHome()) {
   const loaded = loadUserConfig(home);
   for (const [key, value] of Object.entries(loaded)) {
     if (!process.env[key]) {
@@ -75,6 +83,7 @@ function applyUserConfigToProcessEnv(home = process.env.HOME || os.homedir()) {
 
 module.exports = {
   ENV_KEYS,
+  resolveHome,
   configDir,
   configFile,
   parseEnvFile,

@@ -29,6 +29,17 @@ npm run setup
 VISION_API_KEY=... VISION_MODEL=qwen-vl-plus VISION_BASE_URL=... npm run setup -- --yes
 ```
 
+Windows（PowerShell）同样是 `npm install` 后 `npm run setup`。非交互示例：
+
+```powershell
+$env:VISION_API_KEY="..."
+$env:VISION_MODEL="qwen-vl-plus"
+$env:VISION_BASE_URL="..."
+npm run setup -- --yes
+```
+
+密钥写到 `%USERPROFILE%\.config\ocr-vlm\config.env`，skill 安装到 `%USERPROFILE%\.claude\skills\media-ocr-router\` 与 `%USERPROFILE%\.config\opencode\skills\media-ocr-router\`。
+
 只装某一端：
 
 ```bash
@@ -56,7 +67,7 @@ npx ocr-vlm-mcp uninstall --purge   # 同时删除 config.env 与已安装 skill
 
 ## 环境变量
 
-密钥由 wrapper 从 `~/.config/ocr-vlm/config.env` 加载。客户端配置里不要写 Key。
+密钥由 wrapper 从用户目录下的 `.config/ocr-vlm/config.env` 加载（macOS/Linux 为 `~/.config/ocr-vlm/config.env`，Windows 为 `%USERPROFILE%\.config\ocr-vlm\config.env`）。客户端配置里不要写 Key。
 
 | 变量 | 必填 | 说明 |
 |------|------|------|
@@ -70,7 +81,7 @@ npx ocr-vlm-mcp uninstall --purge   # 同时删除 config.env 与已安装 skill
 
 ## 手工兜底
 
-脚本失败时，把下面的 `command`/`args` 换成你机器上 `ocr_mcp/bin/ocr-vlm-mcp.js` 的绝对路径。密钥仍放在 `~/.config/ocr-vlm/config.env`。
+脚本失败时，把下面的 `command`/`args` 换成你机器上 `ocr_mcp/bin/ocr-vlm-mcp.js` 的绝对路径。密钥仍放在用户目录的 `.config/ocr-vlm/config.env`。
 
 Claude Code（`~/.claude.json` 的 user scope 等价物）：
 

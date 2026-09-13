@@ -2,13 +2,13 @@
 "use strict";
 
 const path = require("path");
-const os = require("os");
 const {
   parseArgs,
   setup,
   doctor,
   uninstall,
   applyUserConfigToProcessEnv,
+  resolveHome,
 } = require("../lib/install.js");
 
 function printResult(result) {
@@ -28,7 +28,7 @@ async function main() {
     return;
   }
 
-  const home = process.env.HOME || os.homedir();
+  const home = resolveHome(process.env);
   const packageRoot = path.join(__dirname, "..");
   const common = {
     home,

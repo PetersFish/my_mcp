@@ -1,13 +1,21 @@
 {
-  "name": "ocr_mcp",
+  "name": "ocr-vlm-mcp",
   "version": "1.0.0",
-  "description": "",
+  "description": "OpenAI-compatible vision/OCR MCP server for Claude Code and OpenCode",
   "main": "index.js",
+  "bin": {
+    "ocr-vlm-mcp": "./bin/ocr-vlm-mcp.js"
+  },
   "scripts": {
     "start": "node index.js",
+    "setup": "node bin/ocr-vlm-mcp.js setup",
+    "doctor": "node bin/ocr-vlm-mcp.js doctor",
     "test": "node --test"
   },
-  "keywords": [],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["mcp", "ocr", "vision", "vlm"],
   "author": "",
   "license": "ISC",
   "type": "commonjs",

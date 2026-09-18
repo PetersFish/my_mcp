@@ -42,7 +42,9 @@ def test_setup_registers_cursor_and_copies_skill(tmp_path: Path) -> None:
     assert SERVER_NAME in data["mcpServers"]
     skill = home / ".cursor" / "skills" / "python-refactor" / "SKILL.md"
     assert skill.is_file()
-    assert "python_refactor" in skill.read_text(encoding="utf-8")
+    skill_text = skill.read_text(encoding="utf-8")
+    assert "python_refactor" in skill_text
+    assert "Do NOT glob" in skill_text
     assert not (home / ".claude" / "CLAUDE.md").exists()
 
 
@@ -114,6 +116,7 @@ def test_setup_writes_opencode_json_and_agents_md_without_cli(tmp_path: Path) ->
     agents = (home / ".config" / "opencode" / "AGENTS.md").read_text(encoding="utf-8")
     assert BLOCK_START in agents
     assert "python_refactor" in agents
+    assert "Do NOT glob" in agents
 
 
 def test_setup_instruction_block_is_idempotent(tmp_path: Path) -> None:
@@ -183,3 +186,11 @@ def test_doctor_accepts_file_config_without_cli(tmp_path: Path) -> None:
     )
     assert result.ok
     assert any("Claude" in message for message in result.messages)
+
+
+def test_readme_agents_snippet_forbids_repo_search() -> None:
+    readme = (PACKAGE_ROOT / "README.md").read_text(encoding="utf-8")
+    assert "search for remaining old module/symbol references" not in readme
+    assert "Do NOT glob or grep" in readme
+    assert "leftover_samples is already the residual search" in readme
+    assert "empty_packages are local keep-or-delete decisions" in readme

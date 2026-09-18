@@ -7,7 +7,7 @@ description: Prefer the python_refactor MCP tool for Python module/symbol moves 
 
 ## Purpose
 
-Use this skill to keep structural Python refactors off the agent's multi-file edit loop. Rope updates imports; you only handle leftovers.
+Use this skill to keep structural Python refactors off the agent's multi-file edit loop. Rope updates imports; you only handle leftovers the tool already listed.
 
 ## Tool names
 
@@ -39,8 +39,21 @@ In the steps below, `python_refactor` means whichever host-specific name applies
 2. Prefer `dry_run=true` first when the blast radius is unclear.
 3. Call `python_refactor` with one of: `move_module`, `rename_module`, `rename_symbol`, `move_symbol`.
 4. Do **not** glob/read/edit many files just to rewrite imports when this tool can do it.
-5. After success, inspect `leftover_samples` / `remaining_old_references`. Manually fix only dynamic leftovers such as `importlib.import_module(...)`, `getattr(...)`, and config strings.
-6. Direct edits remain allowed for business logic and for leftovers the tool cannot rewrite.
+5. After success, `leftover_samples` is already the residual search. Edit only those `file:line` hits using `leftover_replace_from` -> `leftover_replace_to`. Follow `next_action`.
+6. If `leftover_samples` is empty **and** `verification.residual` is `ok` or `failed`, skip leftover work. Do **not** glob or grep the repo to confirm.
+7. A `dry_run` result never scans residual, so it says nothing about leftovers. Re-run without `dry_run` instead of searching.
+8. `empty_packages` are local keep-or-delete decisions, not a search task.
+9. Then run Ruff / Pyright / relevant pytest. Verification must not wait on leftover search.
+
+Direct edits remain allowed for business logic and for leftovers the tool cannot rewrite.
+
+## Leftover anti-patterns
+
+- Do NOT glob `**/*.{py,toml}` or similar wide patterns for leftovers.
+- Do not run a full-repo Grep/rg in parallel with leftover edits.
+- Do not block Ruff/Pyright/pytest on leftover search finishing.
+- If `remaining_old_references` exceeds the sample list, run one exact search for `leftover_replace_from` **only when it is a dotted module path** (`move_module` / `rename_module`).
+- For `rename_symbol` / `move_symbol` the needle is a bare identifier such as `save`. Never grep that repo-wide; edit the listed hits and let Ruff/Pyright surface the rest.
 
 ## Arguments
 
@@ -49,4 +62,4 @@ In the steps below, `python_refactor` means whichever host-specific name applies
 - `rename_symbol`: `module` + `symbol` + `new_name` (`symbol` is `Name` or `Class.method`)
 - `move_symbol`: `module` + `symbol` + `target` (destination module dotted path)
 
-Always pass `project_root` as an absolute directory. The result is compact JSON: file counts and paths, never diffs.
+Always pass `project_root` as an absolute directory. The result is compact JSON: file counts, leftover samples, and `next_action`; never diffs.

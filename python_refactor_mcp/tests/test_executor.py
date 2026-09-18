@@ -17,9 +17,37 @@ def test_executor_rename_symbol_success(mini_pkg: Path) -> None:
     assert result.status == "success"
     assert result.files_changed >= 1
     assert "diff" not in result.model_dump()
-    assert result.verification.get("residual") in {"ok", "failed"}
-    leftover = (mini_pkg / "app" / "dynamic.py").read_text(encoding="utf-8")
-    assert "ReportDAO" not in leftover or result.remaining_old_references >= 0
+    assert result.verification.get("residual") == "ok"
+    assert "ReportDAO" not in (mini_pkg / "app" / "dynamic.py").read_text(encoding="utf-8")
+    assert result.remaining_old_references == 0
+    assert result.leftover_samples == []
+    assert result.leftover_replace_from == "ReportDAO"
+    assert result.leftover_replace_to == "ReportRepository"
+    assert result.next_action.startswith("No leftovers")
+    assert "Do not search" in result.next_action
+
+
+def test_executor_move_module_reports_leftovers_and_empty_packages(mini_pkg: Path) -> None:
+    result = run_refactor(
+        RefactorRequest(
+            operation="move_module",
+            project_root=str(mini_pkg),
+            source="app.services.report",
+            target="app.reporting.application.report_service",
+        )
+    )
+    assert result.status == "success"
+    assert result.leftover_replace_from == "app.services.report"
+    assert result.leftover_replace_to == "app.reporting.application.report_service"
+    assert any(
+        "dynamic.py" in item and "app.services.report" in item
+        for item in result.leftover_samples
+    )
+    assert "app/services" in result.empty_packages
+    assert "app" not in result.empty_packages
+    assert "Edit only leftover_samples" in result.next_action
+    assert "Do not grep or glob" in result.next_action
+    assert "app.services.report -> app.reporting.application.report_service" in result.next_action
 
 
 def test_executor_dry_run_skips_residual(mini_pkg: Path) -> None:
@@ -36,6 +64,11 @@ def test_executor_dry_run_skips_residual(mini_pkg: Path) -> None:
     assert result.dry_run is True
     assert result.verification.get("residual") == "skipped"
     assert (mini_pkg / "app" / "services" / "report.py").exists()
+    assert result.empty_packages == []
+    assert result.leftover_replace_from == "app.services.report"
+    assert "No leftovers" not in result.next_action
+    assert "Dry run" in result.next_action
+    assert "Re-run without dry_run" in result.next_action
 
 
 def test_executor_conflict_when_target_exists(mini_pkg: Path) -> None:
@@ -53,6 +86,7 @@ def test_executor_conflict_when_target_exists(mini_pkg: Path) -> None:
     )
     assert result.status == "conflict"
     assert result.conflicts
+    assert "did not succeed" in result.next_action
     assert (mini_pkg / "app" / "services" / "report.py").exists()
 
 

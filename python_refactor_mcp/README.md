@@ -98,7 +98,7 @@ OpenCode `~/.config/opencode/opencode.json`：
 
 常用可选字段：`dry_run`（默认 false）、`verify`（默认 `["residual"]`，还可加 `ruff` / `pyright` / `pytest`）、`source_root`、`pytest_args`。
 
-结果是 compact JSON：`files_changed`、路径列表、`leftover_samples`。没有 unified diff，也没有文件全文。
+结果是 compact JSON：`files_changed`、路径列表、`leftover_samples`、`leftover_replace_from` / `leftover_replace_to`、`next_action`、`empty_packages`。没有 unified diff，也没有文件全文。`leftover_samples` 就是 residual 搜索结果；按 `next_action` 定点改，不要再全仓搜索。
 
 调试（不经 MCP）：
 
@@ -131,17 +131,23 @@ Use `python_refactor` for:
 Do NOT manually rewrite imports across multiple files when
 `python_refactor` can perform the operation.
 
-After refactoring:
+After python_refactor succeeds:
 
-1. search for remaining old module/symbol references
-2. run Ruff on affected files
-3. run Pyright
-4. run relevant pytest tests
+1. leftover_samples is already the residual search. Edit only those file:line hits.
+   Use leftover_replace_from -> leftover_replace_to. Follow next_action.
+   Do NOT glob or grep the repo.
+2. If leftover_samples is empty and verification.residual is ok/failed, skip leftover
+   work. Do not search to confirm.
+3. A dry_run result never scans residual. Re-run without dry_run instead of searching.
+4. Only rg leftover_replace_from when it is a dotted module path. For symbol renames it
+   is a bare identifier; edit the listed hits and let Ruff/Pyright find the rest.
+5. empty_packages are local keep-or-delete decisions, not a search task.
+6. Then run Ruff / Pyright / relevant pytest. Verification must not wait on leftover search.
 
 Direct edits are allowed only for:
 - business logic changes
 - unsupported dynamic references
-- fixes remaining after semantic refactoring
+- leftover_samples the tool listed
 ```
 
 ## V1 明确不做

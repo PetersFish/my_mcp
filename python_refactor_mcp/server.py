@@ -13,8 +13,10 @@ TOOL_DESCRIPTION = (
     "Deterministic Python structural refactor via Rope. "
     "Use for module/symbol move and rename instead of multi-file import edits. "
     "project_root must be the target project's absolute path. "
-    "Returns a compact JSON summary with file lists and leftover string refs; never diffs. "
-    "Fix leftover_samples (dynamic imports/strings) yourself after success."
+    "Returns a compact JSON summary with file lists, leftover_samples, "
+    "leftover_replace_from/to, next_action, and empty_packages; never diffs. "
+    "After success, edit only leftover_samples in place using leftover_replace_from -> "
+    "leftover_replace_to. Follow next_action. Do not grep or glob the repo."
 )
 
 

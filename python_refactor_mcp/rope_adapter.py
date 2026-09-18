@@ -10,7 +10,13 @@ from rope.refactor.move import create_move
 from rope.refactor.rename import Rename
 
 from python_refactor_mcp.models import RefactorRequest
-from python_refactor_mcp.packages import ensure_package, module_file, resolve_source_root
+from python_refactor_mcp.packages import (
+    ensure_package,
+    module_file,
+    occupied_path,
+    remove_created_paths,
+    resolve_source_root,
+)
 
 IGNORED_RESOURCES = [
     ".git",
@@ -117,8 +123,7 @@ def _rename_module(
     resource = _module_resource(project, project_root, source_root, source)
     parent, _name = _split_dotted(source)
     target = f"{parent}.{request.new_name}" if parent else (request.new_name or "")
-    if module_file(source_root, target) is not None:
-        raise RopeConflictError([f"target already exists: {target}"])
+    _reject_occupied_target(source_root, target)
     changes = Rename(project, resource, None).get_changes(request.new_name or "")
     needles = [source]
     if "/" not in source:
@@ -132,15 +137,20 @@ def _move_symbol(
     source_root: Path,
     request: RefactorRequest,
 ) -> PlannedChanges:
-    resource = _module_resource(project, project_root, source_root, request.module or "")
-    offset = _unique_symbol_offset(resource.read(), request.symbol or "")
-    dest_path = _ensure_module_file(source_root, request.target or "")
-    project.validate()
-    dest_resource = _path_resource(project, project_root, dest_path)
-    mover = create_move(project, resource, offset)
-    changes = mover.get_changes(dest=dest_resource)
-    needle = request.symbol.split(".")[-1] if request.symbol else ""
-    return _apply_or_preview(project, changes, request.dry_run, old_needles=[needle])
+    created: list[Path] = []
+    try:
+        resource = _module_resource(project, project_root, source_root, request.module or "")
+        offset = _unique_symbol_offset(resource.read(), request.symbol or "")
+        dest_path = _ensure_module_file(source_root, request.target or "", created)
+        project.validate()
+        dest_resource = _path_resource(project, project_root, dest_path)
+        mover = create_move(project, resource, offset)
+        changes = mover.get_changes(dest=dest_resource)
+        needle = request.symbol.split(".")[-1] if request.symbol else ""
+        return _apply_or_preview(project, changes, request.dry_run, old_needles=[needle])
+    finally:
+        if request.dry_run:
+            remove_created_paths(created)
 
 
 def _move_module(
@@ -149,14 +159,28 @@ def _move_module(
     source_root: Path,
     request: RefactorRequest,
 ) -> PlannedChanges:
+    created: list[Path] = []
+    try:
+        return _move_module_changes(project, project_root, source_root, request, created)
+    finally:
+        if request.dry_run:
+            remove_created_paths(created)
+
+
+def _move_module_changes(
+    project: Project,
+    project_root: Path,
+    source_root: Path,
+    request: RefactorRequest,
+    created: list[Path],
+) -> PlannedChanges:
     source = request.source or ""
     target = request.target or ""
-    if module_file(source_root, target) is not None:
-        raise RopeConflictError([f"target already exists: {target}"])
+    _reject_occupied_target(source_root, target)
     src_parent, src_name = _split_dotted(source)
     dst_parent, dst_name = _split_dotted(target)
     if dst_parent:
-        ensure_package(source_root, dst_parent)
+        ensure_package(source_root, dst_parent, created)
         project.validate()
     source_resource = _module_resource(project, project_root, source_root, source)
     needles = [source, source.replace(".", "/")]
@@ -165,7 +189,7 @@ def _move_module(
         changes = Rename(project, source_resource, None).get_changes(dst_name)
         return _apply_or_preview(project, changes, request.dry_run, old_needles=needles)
 
-    dest_folder = source_root if not dst_parent else ensure_package(source_root, dst_parent)
+    dest_folder = source_root if not dst_parent else ensure_package(source_root, dst_parent, created)
     dest_resource = _path_resource(project, project_root, dest_folder)
     mover = create_move(project, source_resource)
     move_changes = mover.get_changes(dest=dest_resource)
@@ -272,18 +296,32 @@ def _module_resource(project: Project, project_root: Path, source_root: Path, do
     return _path_resource(project, project_root, path)
 
 
-def _ensure_module_file(source_root: Path, dotted: str) -> Path:
+def _reject_occupied_target(source_root: Path, target: str) -> None:
+    occupied = occupied_path(source_root, target)
+    if occupied is None:
+        return
+    if module_file(source_root, target) is not None:
+        raise RopeConflictError([f"target already exists: {target}"])
+    rel = "/".join(target.split("."))
+    raise RopeConflictError(
+        [f"target path {rel} exists but is not a package; delete the leftover directory first"]
+    )
+
+
+def _ensure_module_file(source_root: Path, dotted: str, created: list[Path] | None = None) -> Path:
     existing = module_file(source_root, dotted)
     if existing is not None:
         return existing
     parent, name = _split_dotted(dotted)
     if parent:
-        ensure_package(source_root, parent)
+        ensure_package(source_root, parent, created)
         path = source_root / Path(*parent.split(".")) / f"{name}.py"
     else:
         path = source_root / f"{name}.py"
     if not path.exists():
         path.write_text("", encoding="utf-8")
+        if created is not None:
+            created.append(path)
     return path
 
 

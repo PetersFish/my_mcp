@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from python_refactor_mcp.gitutil import snapshot_porcelain
 from python_refactor_mcp.models import RefactorRequest, RefactorResult
+from python_refactor_mcp.packages import find_empty_packages, resolve_source_root
 from python_refactor_mcp.rope_adapter import RopeAdapterError, RopeConflictError, run_rope
-from python_refactor_mcp.summary import compact_result
+from python_refactor_mcp.summary import compact_result, leftover_replace_pair
 from python_refactor_mcp.verifier import run_verification
 
 
@@ -11,6 +12,19 @@ def run_refactor(request: RefactorRequest) -> RefactorResult:
     dirty = snapshot_porcelain(request.project_root)
     git_dirty_before = bool(dirty)
     target = _result_target(request)
+    replace_from, replace_to = leftover_replace_pair(
+        request.operation,
+        source=request.source,
+        target=request.target,
+        module=request.module,
+        symbol=request.symbol,
+        new_name=request.new_name,
+    )
+    source_root = resolve_source_root(
+        request.project_root,
+        request.source_root,
+        dotted_module=_lookup_module(request),
+    )
     try:
         planned = run_rope(request)
     except RopeConflictError as exc:
@@ -20,6 +34,8 @@ def run_refactor(request: RefactorRequest) -> RefactorResult:
             source=_result_source(request),
             target=target,
             status="conflict",
+            leftover_replace_from=replace_from,
+            leftover_replace_to=replace_to,
             conflicts=exc.conflicts,
             git_dirty_before=git_dirty_before,
             error="; ".join(exc.conflicts),
@@ -34,6 +50,8 @@ def run_refactor(request: RefactorRequest) -> RefactorResult:
             target=target,
             status="error",
             changed_files=changed,
+            leftover_replace_from=replace_from,
+            leftover_replace_to=replace_to,
             git_dirty_before=git_dirty_before,
             error=_short_error(str(exc)),
         )
@@ -47,6 +65,8 @@ def run_refactor(request: RefactorRequest) -> RefactorResult:
             target=target,
             status="error",
             changed_files=changed,
+            leftover_replace_from=replace_from,
+            leftover_replace_to=replace_to,
             git_dirty_before=git_dirty_before,
             error=_short_error(str(exc)),
         )
@@ -59,6 +79,17 @@ def run_refactor(request: RefactorRequest) -> RefactorResult:
         pytest_args=request.pytest_args,
         dry_run=request.dry_run,
     )
+    empty: list[str] = []
+    if (
+        not request.dry_run
+        and request.operation in {"move_module", "rename_module"}
+        and request.source
+    ):
+        empty = find_empty_packages(
+            request.project_root,
+            request.source,
+            source_root,
+        )
     return compact_result(
         operation=request.operation,
         dry_run=request.dry_run,
@@ -70,9 +101,18 @@ def run_refactor(request: RefactorRequest) -> RefactorResult:
         deleted_files=planned.deleted_files,
         leftover_samples=samples,
         remaining_old_references=remaining,
+        leftover_replace_from=replace_from,
+        leftover_replace_to=replace_to,
+        empty_packages=empty,
         git_dirty_before=git_dirty_before,
         verification=verification,
     )
+
+
+def _lookup_module(request: RefactorRequest) -> str | None:
+    if request.operation in {"move_module", "rename_module"}:
+        return request.source
+    return request.module
 
 
 def _result_source(request: RefactorRequest) -> str | None:

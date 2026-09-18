@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from python_refactor_mcp.packages import ensure_package, module_file, resolve_source_root
+from python_refactor_mcp.packages import (
+    ensure_package,
+    find_empty_packages,
+    module_file,
+    resolve_source_root,
+)
 
 
 def _write_module(root: Path, rel: str, body: str = "x = 1\n") -> Path:
@@ -48,3 +53,59 @@ def test_module_file_finds_py_and_package(tmp_path: Path) -> None:
     assert module_file(tmp_path, "app.services.report") == tmp_path / "app" / "services" / "report.py"
     assert module_file(tmp_path, "app.api") == pkg / "__init__.py"
     assert module_file(tmp_path, "missing.mod") is None
+
+
+def test_find_empty_packages_walks_empty_parents(tmp_path: Path) -> None:
+    services = tmp_path / "app" / "services"
+    services.mkdir(parents=True)
+    (tmp_path / "app" / "__init__.py").write_text("", encoding="utf-8")
+    (services / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "app" / "api.py").write_text("x = 1\n", encoding="utf-8")
+    found = find_empty_packages(tmp_path, "app.services.report", tmp_path)
+    assert found == ["app/services"]
+
+
+def test_find_empty_packages_ignores_pycache_and_stops_on_content(tmp_path: Path) -> None:
+    services = tmp_path / "app" / "services"
+    services.mkdir(parents=True)
+    (tmp_path / "app" / "__init__.py").write_text("# keep app\n", encoding="utf-8")
+    (services / "__init__.py").write_text("", encoding="utf-8")
+    cache = services / "__pycache__"
+    cache.mkdir()
+    (cache / "x.pyc").write_text("", encoding="utf-8")
+    found = find_empty_packages(tmp_path, "app.services.report", tmp_path)
+    assert found == ["app/services"]
+
+
+def test_find_empty_packages_reports_source_package_own_dir(tmp_path: Path) -> None:
+    reporting = tmp_path / "app" / "reporting"
+    reporting.mkdir(parents=True)
+    (tmp_path / "app" / "__init__.py").write_text("x = 1\n", encoding="utf-8")
+    (reporting / "__init__.py").write_text("", encoding="utf-8")
+    found = find_empty_packages(tmp_path, "app.reporting", tmp_path)
+    assert found == ["app/reporting"]
+
+
+def test_find_empty_packages_stops_at_parent_holding_surviving_child(tmp_path: Path) -> None:
+    inner = tmp_path / "app" / "services" / "legacy"
+    inner.mkdir(parents=True)
+    (tmp_path / "app" / "__init__.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "app" / "services" / "__init__.py").write_text("", encoding="utf-8")
+    (inner / "__init__.py").write_text("", encoding="utf-8")
+    found = find_empty_packages(tmp_path, "app.services.legacy", tmp_path)
+    assert found == ["app/services/legacy"]
+
+
+def test_find_empty_packages_ignores_dir_without_init(tmp_path: Path) -> None:
+    services = tmp_path / "app" / "services"
+    services.mkdir(parents=True)
+    (tmp_path / "app" / "__init__.py").write_text("x = 1\n", encoding="utf-8")
+    assert find_empty_packages(tmp_path, "app.services.report", tmp_path) == []
+
+
+def test_find_empty_packages_skips_nonempty_init(tmp_path: Path) -> None:
+    services = tmp_path / "app" / "services"
+    services.mkdir(parents=True)
+    (tmp_path / "app" / "__init__.py").write_text("", encoding="utf-8")
+    (services / "__init__.py").write_text("from . import report\n", encoding="utf-8")
+    assert find_empty_packages(tmp_path, "app.services.report", tmp_path) == []

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from python_refactor_mcp.gitutil import snapshot_porcelain
+from python_refactor_mcp.adapters.rope_adapter import RopeAdapterError, RopeConflictError
 from python_refactor_mcp.models import RefactorRequest, RefactorResult
-from python_refactor_mcp.packages import find_empty_packages, resolve_source_root
-from python_refactor_mcp.rope_adapter import RopeAdapterError, RopeConflictError, run_rope
-from python_refactor_mcp.summary import compact_result, leftover_replace_pair
-from python_refactor_mcp.verifier import run_verification
+from python_refactor_mcp.services.refactor_service import run_rope_refactor
+from python_refactor_mcp.services.verification_service import run_verification
+from python_refactor_mcp.utils.gitutil import snapshot_porcelain
+from python_refactor_mcp.utils.packages import find_empty_packages, resolve_source_root
+from python_refactor_mcp.utils.summaries import compact_result, leftover_replace_pair
 
 
 def run_refactor(request: RefactorRequest) -> RefactorResult:
@@ -26,7 +27,7 @@ def run_refactor(request: RefactorRequest) -> RefactorResult:
         dotted_module=_lookup_module(request),
     )
     try:
-        planned = run_rope(request)
+        planned = run_rope_refactor(request)
     except RopeConflictError as exc:
         return compact_result(
             operation=request.operation,

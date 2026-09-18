@@ -4,8 +4,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from python_refactor_mcp.models import VerifyStep
-from python_refactor_mcp.summary import LEFTOVER_SAMPLES_LIMIT
+from python_refactor_mcp.models.common import VerifyStep
+from python_refactor_mcp.utils.summaries import LEFTOVER_SAMPLES_LIMIT
 
 SKIP_DIRS = {
     ".git",

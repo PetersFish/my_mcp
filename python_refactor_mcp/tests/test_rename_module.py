@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from python_refactor_mcp.models import RefactorRequest
-from python_refactor_mcp.rope_adapter import run_rope
+from python_refactor_mcp.adapters.rope_adapter import run_rope
 
 
 def test_rename_module_same_package(mini_pkg: Path) -> None:

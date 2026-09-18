@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 
-from python_refactor_mcp.executor import run_refactor
 from python_refactor_mcp.models import RefactorRequest
+from python_refactor_mcp.orchestration.refactor_orchestrator import run_refactor
 
 
 def build_parser() -> argparse.ArgumentParser:

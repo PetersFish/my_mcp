@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from python_refactor_mcp.models import Operation, RefactorResult, ResultStatus
+from pathlib import Path
+
+from python_refactor_mcp.models.common import Operation, ResultStatus
+from python_refactor_mcp.models.results import RefactorResult
 
 CHANGED_FILES_LIMIT = 80
 LEFTOVER_SAMPLES_LIMIT = 20
@@ -175,3 +178,20 @@ def compact_result(
         verification=checks,
         error=error,
     )
+
+
+MAX_REFERENCES_DEFAULT = 50
+
+
+def format_location(project_root: Path, path: Path, line: int, character: int) -> str:
+    try:
+        rel = path.resolve().relative_to(project_root.resolve()).as_posix()
+    except ValueError:
+        rel = path.as_posix()
+    return f"{rel}:{line + 1}:{character + 1}"
+
+
+def truncate_items(items: list[str], limit: int) -> tuple[list[str], bool]:
+    if len(items) <= limit:
+        return items, False
+    return items[:limit], True

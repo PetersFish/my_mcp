@@ -87,7 +87,9 @@ OpenCode `~/.config/opencode/opencode.json`：
 
 ## 工具
 
-单一工具 `python_refactor`。`project_root` 必须是**目标 Python 项目**的绝对路径（MCP 进程 cwd 不是那个项目）。
+两个工具：`python_refactor`（mutation）和 `inspect_symbol`（语义查询）。`project_root` 必须是**目标 Python 项目**的绝对路径（MCP 进程 cwd 不是那个项目）。
+
+### python_refactor
 
 | operation | 必填字段 |
 | --- | --- |
@@ -99,6 +101,19 @@ OpenCode `~/.config/opencode/opencode.json`：
 常用可选字段：`dry_run`（默认 false）、`verify`（默认 `["residual"]`，还可加 `ruff` / `pyright` / `pytest`）、`source_root`、`pytest_args`。
 
 结果是 compact JSON：`files_changed`、路径列表、`leftover_samples`、`leftover_replace_from` / `leftover_replace_to`、`next_action`、`empty_packages`。没有 unified diff，也没有文件全文。`leftover_samples` 就是 residual 搜索结果；按 `next_action` 定点改，不要再全仓搜索。
+
+### inspect_symbol
+
+在改代码前用这个代替 grep/read 循环。`line` / `character` 是 **1-based**。
+
+| 字段 | 说明 |
+| --- | --- |
+| `file` | 相对 `project_root` 或绝对路径 |
+| `line`, `character` | 1-based 位置 |
+| `include_definition` / `include_references` / `include_type` | 默认 true |
+| `max_references` | 默认 50，超出则截断并设 `references_truncated` |
+
+返回 compact JSON：`symbol`、`definition`（`path:line:col`）、`reference_count`、截断后的 `references`、`type`。没有源码，没有 diff。
 
 调试（不经 MCP）：
 
@@ -120,6 +135,7 @@ python -m python_refactor_mcp.cli \
 
 For structural Python refactoring, always prefer the
 `python_refactor` tool over manual multi-file editing.
+Use `inspect_symbol` for definition/references/type instead of grep/read loops.
 
 Use `python_refactor` for:
 

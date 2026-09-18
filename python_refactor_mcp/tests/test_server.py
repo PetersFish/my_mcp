@@ -40,7 +40,6 @@ def test_python_refactor_tool_returns_json_summary(mini_pkg: Path) -> None:
         assert banned not in raw
     tools = asyncio.run(_list_tools())
     assert "python_refactor" in tools
-    assert len(tools) == 1
 
 
 async def _list_tools() -> list[str]:

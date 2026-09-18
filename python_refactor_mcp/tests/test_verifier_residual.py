@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from python_refactor_mcp.verifier import scan_residual
+from python_refactor_mcp.services.verification_service import scan_residual
 
 
 def test_scan_residual_finds_dynamic_import_string(mini_pkg: Path) -> None:

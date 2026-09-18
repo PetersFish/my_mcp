@@ -1,0 +1,13 @@
+from __future__ import annotations
+
+from typing import Protocol
+
+
+class TypeProvider(Protocol):
+    async def get_computed_type(self, *_args: object, **_kwargs: object) -> object: ...
+
+    async def get_declared_type(self, *_args: object, **_kwargs: object) -> object: ...
+
+    async def get_expected_type(self, *_args: object, **_kwargs: object) -> object: ...
+
+    async def resolve_import(self, *_args: object, **_kwargs: object) -> object: ...

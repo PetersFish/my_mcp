@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from python_refactor_mcp.packages import (
+from python_refactor_mcp.utils.packages import (
     ensure_package,
     find_empty_packages,
     module_file,

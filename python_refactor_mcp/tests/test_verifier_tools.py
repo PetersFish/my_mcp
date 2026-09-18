@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 
-from python_refactor_mcp.verifier import run_pyright, run_pytest, run_ruff, run_verification
+from python_refactor_mcp.services.verification_service import run_pyright, run_pytest, run_ruff, run_verification
 
 
 def test_ruff_skipped_when_binary_missing(mini_pkg: Path, monkeypatch) -> None:
@@ -29,7 +29,7 @@ def test_pytest_args_are_passed(mini_pkg: Path, monkeypatch) -> None:
 
         return Result()
 
-    monkeypatch.setattr("python_refactor_mcp.verifier.subprocess.run", fake_run)
+    monkeypatch.setattr("python_refactor_mcp.services.verification_service.subprocess.run", fake_run)
     monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/pytest" if name == "pytest" else None)
     status = run_pytest(mini_pkg, [], pytest_args=["-k", "test_build"])
     assert status == "ok"

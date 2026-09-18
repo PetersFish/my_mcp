@@ -10,7 +10,7 @@ from rope.refactor.move import create_move
 from rope.refactor.rename import Rename
 
 from python_refactor_mcp.models import RefactorRequest
-from python_refactor_mcp.packages import (
+from python_refactor_mcp.utils.packages import (
     ensure_package,
     module_file,
     occupied_path,

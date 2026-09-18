@@ -1,6 +1,6 @@
 ---
 name: python-refactor
-description: Prefer the python_refactor MCP tool for Python module/symbol moves and renames. Use when the user asks to move or rename a Python package, module, class, or function, or when imports must be updated across files. Do not use for business-logic edits or unsupported dynamic string rewrites.
+description: Prefer the python_refactor MCP tool for Python module/symbol moves and renames, and inspect_symbol for definition/references/type. Use when the user asks to move or rename a Python package, module, class, or function, or when imports must be updated across files. Do not use for business-logic edits or unsupported dynamic string rewrites.
 ---
 
 # Python Refactor Router
@@ -16,11 +16,13 @@ This skill talks to the `python-refactor` MCP server. Use the name your host exp
 | Capability | OpenCode / Cursor | Claude Code |
 | --- | --- | --- |
 | python refactor | `python_refactor` or `python-refactor_python_refactor` | `mcp__python-refactor__python_refactor` |
+| inspect symbol | `inspect_symbol` or `python-refactor_inspect_symbol` | `mcp__python-refactor__inspect_symbol` |
 
 In the steps below, `python_refactor` means whichever host-specific name applies.
 
 ## When To Use
 
+- Look up a symbol's definition, references, or type (`inspect_symbol`) instead of grep/read loops
 - Move or rename a Python module or package
 - Rename a top-level class, function, or `Class.method`
 - Move a top-level class/function to another module
@@ -36,14 +38,15 @@ In the steps below, `python_refactor` means whichever host-specific name applies
 ## Required Steps
 
 1. Resolve the target Python project absolute path as `project_root`.
-2. Prefer `dry_run=true` first when the blast radius is unclear.
-3. Call `python_refactor` with one of: `move_module`, `rename_module`, `rename_symbol`, `move_symbol`.
-4. Do **not** glob/read/edit many files just to rewrite imports when this tool can do it.
-5. After success, `leftover_samples` is already the residual search. Edit only those `file:line` hits using `leftover_replace_from` -> `leftover_replace_to`. Follow `next_action`.
-6. If `leftover_samples` is empty **and** `verification.residual` is `ok` or `failed`, skip leftover work. Do **not** glob or grep the repo to confirm.
-7. A `dry_run` result never scans residual, so it says nothing about leftovers. Re-run without `dry_run` instead of searching.
-8. `empty_packages` are local keep-or-delete decisions, not a search task.
-9. Then run Ruff / Pyright / relevant pytest. Verification must not wait on leftover search.
+2. If you need definition/references/type first, call `inspect_symbol` with 1-based `line`/`character`. Do not grep the repo for that.
+3. Prefer `dry_run=true` first when the blast radius is unclear.
+4. Call `python_refactor` with one of: `move_module`, `rename_module`, `rename_symbol`, `move_symbol`.
+5. Do **not** glob/read/edit many files just to rewrite imports when this tool can do it.
+6. After success, `leftover_samples` is already the residual search. Edit only those `file:line` hits using `leftover_replace_from` -> `leftover_replace_to`. Follow `next_action`.
+7. If `leftover_samples` is empty **and** `verification.residual` is `ok` or `failed`, skip leftover work. Do **not** glob or grep the repo to confirm.
+8. A `dry_run` result never scans residual, so it says nothing about leftovers. Re-run without `dry_run` instead of searching.
+9. `empty_packages` are local keep-or-delete decisions, not a search task.
+10. Then run Ruff / Pyright / relevant pytest. Verification must not wait on leftover search.
 
 Direct edits remain allowed for business logic and for leftovers the tool cannot rewrite.
 
@@ -63,3 +66,5 @@ Direct edits remain allowed for business logic and for leftovers the tool cannot
 - `move_symbol`: `module` + `symbol` + `target` (destination module dotted path)
 
 Always pass `project_root` as an absolute directory. The result is compact JSON: file counts, leftover samples, and `next_action`; never diffs.
+
+`inspect_symbol` uses 1-based `line`/`character` and returns a truncated reference list plus `reference_count`. Do not grep to confirm.

@@ -1,7 +1,7 @@
 import subprocess
 from pathlib import Path
 
-from python_refactor_mcp import gitutil
+from python_refactor_mcp.utils import gitutil
 
 
 def _git(repo: Path, *args: str) -> None:

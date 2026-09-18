@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-Operation = Literal["move_module", "rename_module", "rename_symbol", "move_symbol"]
-VerifyStep = Literal["residual", "ruff", "pyright", "pytest"]
-ResultStatus = Literal["success", "error", "conflict"]
+from python_refactor_mcp.models.common import Operation, VerifyStep
 
 
 class RefactorRequest(BaseModel):
@@ -60,26 +57,3 @@ class RefactorRequest(BaseModel):
             if not self.module or not self.symbol or not self.target:
                 raise ValueError("move_symbol requires module, symbol, and target")
         return self
-
-
-class RefactorResult(BaseModel):
-    status: ResultStatus
-    operation: Operation
-    dry_run: bool
-    source: str | None = None
-    target: str | None = None
-    files_changed: int = 0
-    files_created: int = 0
-    files_deleted: int = 0
-    changed_files: list[str] = Field(default_factory=list)
-    changed_files_truncated: bool = False
-    remaining_old_references: int = 0
-    leftover_samples: list[str] = Field(default_factory=list)
-    leftover_replace_from: str | None = None
-    leftover_replace_to: str | None = None
-    next_action: str = ""
-    empty_packages: list[str] = Field(default_factory=list)
-    conflicts: list[str] = Field(default_factory=list)
-    git_dirty_before: bool = False
-    verification: dict[str, str] = Field(default_factory=dict)
-    error: str | None = None

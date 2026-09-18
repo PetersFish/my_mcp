@@ -1,5 +1,5 @@
 from python_refactor_mcp.models import RefactorResult
-from python_refactor_mcp.summary import (
+from python_refactor_mcp.utils.summaries import (
     CHANGED_FILES_LIMIT,
     LEFTOVER_SAMPLES_LIMIT,
     compact_result,

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from python_refactor_mcp.models import RefactorRequest
-from python_refactor_mcp.rope_adapter import RopeConflictError, run_rope
+from python_refactor_mcp.adapters.rope_adapter import RopeConflictError, run_rope
 
 
 def test_move_module_creates_packages(mini_pkg: Path) -> None:

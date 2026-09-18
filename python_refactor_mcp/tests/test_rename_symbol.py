@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from python_refactor_mcp.models import RefactorRequest
-from python_refactor_mcp.rope_adapter import RopeConflictError, run_rope
+from python_refactor_mcp.adapters.rope_adapter import RopeConflictError, run_rope
 
 
 def test_rename_symbol_updates_imports(mini_pkg: Path) -> None:

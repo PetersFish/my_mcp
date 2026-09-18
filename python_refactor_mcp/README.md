@@ -1,0 +1,163 @@
+# python-refactor-mcp
+
+基于 **Rope** 的确定性 Python 结构重构 stdio MCP。Agent 只提交重构意图（移动/重命名模块或符号）；工具改文件并返回 compact JSON 摘要，不把 diff 或文件内容灌回 context。
+
+V1 支持 4 个 operation：`move_module`、`rename_module`、`rename_symbol`、`move_symbol`。
+
+## 接入
+
+前置：Python 3.11+ 与 [uv](https://docs.astral.sh/uv/)。
+
+**Agent 在用户电脑上安装**（非交互，一条命令即可）：
+
+```bash
+cd <path-to>/python_refactor_mcp
+python -m python_refactor_mcp setup --client all --yes
+python -m python_refactor_mcp doctor
+```
+
+`setup --yes` 会改这些**用户级**文件（不改任意 git 仓库里的项目 `CLAUDE.md`）：
+
+- MCP：`~/.cursor/mcp.json`、`~/.claude.json`（`mcpServers`）、`~/.config/opencode/opencode.json`
+- Skill 目录：`~/.cursor/skills/python-refactor/`、`~/.claude/skills/python-refactor/`、`~/.config/opencode/skills/python-refactor/`
+- 始终加载的指令（带 `<!-- python-refactor-mcp:start -->` 标记，可重复 setup）：`~/.claude/CLAUDE.md`、`~/.config/opencode/AGENTS.md`
+
+有 `claude` / `opencode` CLI 时优先 `mcp add`；没有 CLI 或 add 失败则直接写 JSON。
+
+只装某一端：
+
+```bash
+python -m python_refactor_mcp setup --client cursor --yes
+python -m python_refactor_mcp setup --client claude --yes
+python -m python_refactor_mcp setup --client opencode --yes
+```
+
+验证：
+
+```bash
+python -m python_refactor_mcp doctor
+```
+
+卸载：
+
+```bash
+python -m python_refactor_mcp uninstall
+python -m python_refactor_mcp uninstall --purge   # 同时删除 skill 目录和指令标记块
+```
+
+无 API key。客户端配置里不要写密钥。
+
+手工兜底：
+
+Cursor `~/.cursor/mcp.json` 与 Claude Code `~/.claude.json`（user scope，只合并 `mcpServers`）：
+
+```json
+{
+  "mcpServers": {
+    "python-refactor": {
+      "command": "/absolute/path/to/python_refactor_mcp/.venv/bin/python",
+      "args": ["-m", "python_refactor_mcp"],
+      "cwd": "/absolute/path/to/python_refactor_mcp"
+    }
+  }
+}
+```
+
+OpenCode `~/.config/opencode/opencode.json`：
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "python-refactor": {
+        "type": "local",
+        "command": [
+          "/absolute/path/to/python_refactor_mcp/.venv/bin/python",
+          "-m",
+          "python_refactor_mcp"
+        ]
+      }
+    }
+  }
+}
+```
+
+若你的 OpenCode 仍是旧格式，把 `python-refactor` 直接写在 `mcp` 下，而不是 `mcp.servers`。
+
+## 工具
+
+单一工具 `python_refactor`。`project_root` 必须是**目标 Python 项目**的绝对路径（MCP 进程 cwd 不是那个项目）。
+
+| operation | 必填字段 |
+| --- | --- |
+| `move_module` | `source`, `target`（dotted path） |
+| `rename_module` | `source`, `new_name`（`new_name` 只能是最后一段标识符） |
+| `rename_symbol` | `module`, `symbol`, `new_name`（`symbol` 为 `Name` 或 `Class.method`） |
+| `move_symbol` | `module`, `symbol`, `target`（目标模块 dotted path） |
+
+常用可选字段：`dry_run`（默认 false）、`verify`（默认 `["residual"]`，还可加 `ruff` / `pyright` / `pytest`）、`source_root`、`pytest_args`。
+
+结果是 compact JSON：`files_changed`、路径列表、`leftover_samples`。没有 unified diff，也没有文件全文。
+
+调试（不经 MCP）：
+
+```bash
+python -m python_refactor_mcp.cli \
+  --operation move_module \
+  --project-root /abs/path/to/project \
+  --source app.services.report \
+  --target app.reporting.application.report_service \
+  --dry-run
+```
+
+## 目标项目 AGENTS.md 片段
+
+把下面片段粘到**被重构的 Python 仓库**（不是本 MCP 仓库）：
+
+```markdown
+## Python Refactoring
+
+For structural Python refactoring, always prefer the
+`python_refactor` tool over manual multi-file editing.
+
+Use `python_refactor` for:
+
+- module move
+- module rename
+- class/function rename
+- class/function move
+
+Do NOT manually rewrite imports across multiple files when
+`python_refactor` can perform the operation.
+
+After refactoring:
+
+1. search for remaining old module/symbol references
+2. run Ruff on affected files
+3. run Pyright
+4. run relevant pytest tests
+
+Direct edits are allowed only for:
+- business logic changes
+- unsupported dynamic references
+- fixes remaining after semantic refactoring
+```
+
+## V1 明确不做
+
+- 自动改 `importlib.import_module` / `getattr` 等动态字符串
+- 自动改 JSON / YAML / Markdown / shell / 部署配置
+- extract method / change signature / inline
+- LibCST、工具内 LLM、自动 `git reset`
+- 默认跑全量 pytest（需 `verify=["pytest"]` 才跑）
+
+Rope 可能会为了解析路径而补空的 `__init__.py`，从而把 namespace package 变成 regular package。失败时工具不会 `git reset`；回滚交给 Git / 用户。
+
+## 开发
+
+```bash
+cd python_refactor_mcp
+uv pip install -e ".[dev]"
+uv run pytest
+```

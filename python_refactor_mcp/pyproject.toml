@@ -1,0 +1,51 @@
+[project]
+name = "python-refactor-mcp"
+version = "0.1.0"
+description = "Deterministic Python refactor MCP powered by Rope"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=2.12",
+    "pydantic>=2.10",
+    "rope>=1.13",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+python-refactor-mcp = "python_refactor_mcp.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+dev-mode-dirs = [".."]
+
+[tool.hatch.build.targets.wheel]
+only-include = [
+    "__init__.py",
+    "__main__.py",
+    "cli.py",
+    "executor.py",
+    "gitutil.py",
+    "install.py",
+    "models.py",
+    "packages.py",
+    "rope_adapter.py",
+    "server.py",
+    "summary.py",
+    "verifier.py",
+]
+
+[tool.hatch.build.targets.wheel.sources]
+"" = "python_refactor_mcp"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+norecursedirs = ["fixtures", ".venv", "dist", "build"]
+filterwarnings = [
+    "ignore:Delete once deprecated functions are gone:DeprecationWarning",
+]

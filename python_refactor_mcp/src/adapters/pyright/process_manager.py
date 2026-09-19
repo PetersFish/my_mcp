@@ -11,6 +11,7 @@ from python_refactor_mcp.adapters.pyright.environment_resolver import (
 from python_refactor_mcp.adapters.pyright.loop_runner import LoopRunner
 from python_refactor_mcp.adapters.pyright.runtime import PyrightRuntime
 from python_refactor_mcp.adapters.pyright.runtime_resolver import PyrightRuntimeResolver
+from python_refactor_mcp.models.errors import RefactorError
 
 
 class LspSessionClient(Protocol):
@@ -23,7 +24,13 @@ class LspSessionClient(Protocol):
 
     async def health_check(self) -> bool: ...
 
-    async def refresh(self, changed_files: list[Path]) -> None: ...
+    async def refresh(
+        self,
+        *,
+        created: list[Path] | None = None,
+        changed: list[Path] | None = None,
+        deleted: list[Path] | None = None,
+    ) -> None: ...
 
     async def shutdown(self) -> None: ...
 
@@ -71,9 +78,22 @@ class PyrightProcessManager:
             return False
         return await session.client.health_check()
 
-    async def refresh(self, project_root: str | Path, changed_files: list[Path]) -> None:
+    async def refresh(
+        self,
+        project_root: str | Path,
+        *,
+        created: list[Path] | None = None,
+        changed: list[Path] | None = None,
+        deleted: list[Path] | None = None,
+    ) -> None:
         session = await self.get_or_start(project_root)
-        await session.client.refresh(changed_files)
+        try:
+            await session.client.refresh(created=created, changed=changed, deleted=deleted)
+        except RefactorError as exc:
+            if exc.code not in {"PYRIGHT_TIMEOUT", "LSP_PROTOCOL_ERROR"}:
+                raise
+            session = await self.restart(project_root)
+            await session.client.refresh(created=created, changed=changed, deleted=deleted)
 
     async def restart(self, project_root: str | Path) -> PyrightSession:
         root = Path(project_root).resolve()

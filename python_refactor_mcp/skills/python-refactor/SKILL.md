@@ -41,6 +41,7 @@ In the steps below, `python_refactor` means whichever host-specific name applies
 2. If you need definition/references/type first, call `inspect_symbol` with 1-based `line`/`character`. Do not grep the repo for that.
 3. Prefer `dry_run=true` first when the blast radius is unclear.
 4. Call `python_refactor` with one of: `move_module`, `rename_module`, `rename_symbol`, `move_symbol`.
+   Symbol rename/move preflights via Pyright; if Pyright is down, default `semantic_mode=best_effort` still runs Rope. Use `required` only when you must abort without semantics.
 5. Do **not** glob/read/edit many files just to rewrite imports when this tool can do it.
 6. After success, `leftover_samples` is already the residual search. Edit only those `file:line` hits using `leftover_replace_from` -> `leftover_replace_to`. Follow `next_action`.
 7. If `leftover_samples` is empty **and** `verification.residual` is `ok` or `failed`, skip leftover work. Do **not** glob or grep the repo to confirm.
@@ -64,6 +65,7 @@ Direct edits remain allowed for business logic and for leftovers the tool cannot
 - `rename_module`: `source` + `new_name` (new_name is a single identifier; changing package requires `move_module`)
 - `rename_symbol`: `module` + `symbol` + `new_name` (`symbol` is `Name` or `Class.method`)
 - `move_symbol`: `module` + `symbol` + `target` (destination module dotted path)
+- Optional `semantic_mode`: `best_effort` (default) or `required`
 
 Always pass `project_root` as an absolute directory. The result is compact JSON: file counts, leftover samples, and `next_action`; never diffs.
 

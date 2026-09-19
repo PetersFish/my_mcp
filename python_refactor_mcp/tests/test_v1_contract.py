@@ -70,7 +70,7 @@ def test_python_refactor_tool_is_present() -> None:
 
 
 def test_refactor_result_schema_keys_are_stable() -> None:
-    assert set(RefactorResult.model_fields) == REQUIRED_RESULT_KEYS
+    assert REQUIRED_RESULT_KEYS <= set(RefactorResult.model_fields)
     for banned in BANNED_RESULT_KEYS:
         assert banned not in RefactorResult.model_fields
 
@@ -110,7 +110,9 @@ def test_mcp_dry_run_does_not_write_and_omits_diff(mini_pkg: Path) -> None:
     assert result.leftover_replace_from == "ReportDAO"
     assert result.leftover_replace_to == "ReportRepository"
     assert result.next_action
-    assert set(payload) == REQUIRED_RESULT_KEYS
+    assert REQUIRED_RESULT_KEYS <= set(payload)
+    for banned in BANNED_RESULT_KEYS:
+        assert banned not in payload
     for banned in ("--- a/", "+++ b/", "\ndiff "):
         assert banned not in raw
     assert (mini_pkg / "app" / "services" / "report.py").read_text(encoding="utf-8") == original
@@ -156,7 +158,9 @@ def test_executor_covers_all_operations_without_source_dump(mini_pkg: Path) -> N
         result = run_refactor(request)
         seen.add(request.operation)
         dumped = result.model_dump()
-        assert set(dumped) == REQUIRED_RESULT_KEYS
+        assert REQUIRED_RESULT_KEYS <= set(dumped)
+        for banned in BANNED_RESULT_KEYS:
+            assert banned not in dumped
         assert result.status == "success"
         assert result.dry_run is True
         assert result.leftover_replace_from is not None

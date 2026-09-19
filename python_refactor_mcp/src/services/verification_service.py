@@ -86,15 +86,25 @@ def run_ruff(project_root: str | Path, changed_files: list[str]) -> str:
 
 
 def run_pyright(project_root: str | Path, changed_files: list[str]) -> str:
+    from python_refactor_mcp.adapters.pyright.runtime_resolver import PyrightRuntimeResolver
+
     root = Path(project_root)
-    if not shutil.which("pyright"):
+    try:
+        runtime = PyrightRuntimeResolver().resolve(root)
+    except Exception:
         return "skipped"
+    cli = runtime.cli
+    if cli is None:
+        which = shutil.which("pyright")
+        if which is None:
+            return "skipped"
+        cli = Path(which)
     py_files = [
         path
         for path in changed_files
         if path.endswith(".py") and (root / path).is_file()
     ]
-    cmd = ["pyright", *py_files] if py_files else ["pyright"]
+    cmd = [str(cli), *py_files] if py_files else [str(cli)]
     result = subprocess.run(cmd, cwd=root, capture_output=True, text=True)
     return "ok" if result.returncode == 0 else "failed"
 

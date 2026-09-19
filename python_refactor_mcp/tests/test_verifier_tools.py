@@ -9,9 +9,10 @@ def test_ruff_skipped_when_binary_missing(mini_pkg: Path, monkeypatch) -> None:
     assert run_ruff(mini_pkg, ["app/services/report.py"]) == "skipped"
 
 
-def test_pyright_skipped_when_binary_missing(mini_pkg: Path, monkeypatch) -> None:
+def test_pyright_uses_resolver_when_path_empty(mini_pkg: Path, monkeypatch) -> None:
     monkeypatch.setattr(shutil, "which", lambda name: None)
-    assert run_pyright(mini_pkg, ["app/services/report.py"]) == "skipped"
+    status = run_pyright(mini_pkg, ["app/services/report.py"])
+    assert status in {"ok", "failed"}
 
 
 def test_pytest_skipped_without_test_files(mini_pkg: Path) -> None:
@@ -39,6 +40,10 @@ def test_pytest_args_are_passed(mini_pkg: Path, monkeypatch) -> None:
 
 def test_run_verification_respects_requested_steps(mini_pkg: Path, monkeypatch) -> None:
     monkeypatch.setattr(shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        "python_refactor_mcp.services.verification_service.run_pyright",
+        lambda *_args, **_kwargs: "skipped",
+    )
     verification, _remaining, _samples = run_verification(
         mini_pkg,
         changed_files=["app/api/report.py"],

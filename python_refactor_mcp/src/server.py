@@ -49,6 +49,7 @@ def python_refactor(
     verify: list[VerifyStep] | None = None,
     pytest_args: list[str] | None = None,
     source_root: str | None = None,
+    semantic_mode: Literal["best_effort", "required"] | None = None,
 ) -> str:
     request = RefactorRequest(
         operation=operation,
@@ -62,6 +63,7 @@ def python_refactor(
         verify=verify or ["residual"],
         pytest_args=pytest_args,
         source_root=source_root,
+        semantic_mode=semantic_mode,
     )
     return run_refactor(request).model_dump_json()
 

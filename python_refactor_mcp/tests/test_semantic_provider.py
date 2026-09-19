@@ -84,7 +84,10 @@ def test_refresh_method_exists(sample_project: Path) -> None:
         manager = PyrightProcessManager()
         provider = PyrightSemanticProvider(manager)
         try:
-            await provider.refresh(sample_project, [sample_project / "src/app/services/report.py"])
+            await provider.refresh(
+                sample_project,
+                changed=[sample_project / "src/app/services/report.py"],
+            )
         finally:
             await manager.shutdown()
 

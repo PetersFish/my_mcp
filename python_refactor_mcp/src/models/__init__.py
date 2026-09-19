@@ -1,6 +1,7 @@
 from python_refactor_mcp.models.common import (
     Operation,
     ResultStatus,
+    SemanticMode,
     SourcePosition,
     VerifyStep,
 )
@@ -15,6 +16,7 @@ __all__ = [
     "RefactorRequest",
     "RefactorResult",
     "ResultStatus",
+    "SemanticMode",
     "SourcePosition",
     "VerifyStep",
 ]

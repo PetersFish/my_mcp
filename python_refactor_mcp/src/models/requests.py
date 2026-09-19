@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from python_refactor_mcp.models.common import Operation, VerifyStep
+from python_refactor_mcp.models.common import Operation, SemanticMode, VerifyStep
 
 
 class RefactorRequest(BaseModel):
@@ -19,6 +19,7 @@ class RefactorRequest(BaseModel):
     verify: list[VerifyStep] = Field(default_factory=lambda: ["residual"])
     pytest_args: list[str] | None = None
     source_root: str | None = None
+    semantic_mode: SemanticMode | None = None
 
     @field_validator("project_root")
     @classmethod

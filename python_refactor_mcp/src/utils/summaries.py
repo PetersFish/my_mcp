@@ -130,6 +130,11 @@ def compact_result(
     git_dirty_before: bool = False,
     verification: dict[str, str] | None = None,
     error: str | None = None,
+    summary: str | None = None,
+    metrics: dict[str, int] | None = None,
+    warnings: list[str] | None = None,
+    details: dict[str, object] | None = None,
+    semantic_status: str | None = None,
 ) -> RefactorResult:
     changed = list(changed_files or [])
     created = list(created_files or [])
@@ -177,6 +182,11 @@ def compact_result(
         git_dirty_before=git_dirty_before,
         verification=checks,
         error=error,
+        summary=summary,
+        metrics=dict(metrics or {}),
+        warnings=list(warnings or []),
+        details=dict(details or {}),
+        semantic_status=semantic_status,
     )
 
 

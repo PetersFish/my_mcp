@@ -98,9 +98,11 @@ OpenCode `~/.config/opencode/opencode.json`：
 | `rename_symbol` | `module`, `symbol`, `new_name`（`symbol` 为 `Name` 或 `Class.method`） |
 | `move_symbol` | `module`, `symbol`, `target`（目标模块 dotted path） |
 
-常用可选字段：`dry_run`（默认 false）、`verify`（默认 `["residual"]`，还可加 `ruff` / `pyright` / `pytest`）、`source_root`、`pytest_args`。
+常用可选字段：`dry_run`（默认 false）、`verify`（默认 `["residual"]`，还可加 `ruff` / `pyright` / `pytest`）、`source_root`、`pytest_args`、`semantic_mode`（`best_effort` 默认 / `required`）。
 
-结果是 compact JSON：`files_changed`、路径列表、`leftover_samples`、`leftover_replace_from` / `leftover_replace_to`、`next_action`、`empty_packages`。没有 unified diff，也没有文件全文。`leftover_samples` 就是 residual 搜索结果；按 `next_action` 定点改，不要再全仓搜索。
+`rename_symbol` / `move_symbol` 会先走 Pyright semantic preflight（definition + references）；Pyright 不可用时默认 `best_effort` 继续 Rope，`required` 则中止。模块操作不做重 preflight，apply 后做 typed LSP refresh + diagnostics。`verify=["pyright"]` 会经与 LSP 相同的 runtime fallback（含 MCP 自带 CLI）。
+
+结果是 compact JSON：`files_changed`、路径列表、`leftover_samples`、`leftover_replace_from` / `leftover_replace_to`、`next_action`、`empty_packages`，以及可选的 `summary` / `metrics` / `warnings` / `details` / `semantic_status`。没有 unified diff，也没有文件全文。`leftover_samples` 就是 residual 搜索结果；按 `next_action` 定点改，不要再全仓搜索。
 
 ### inspect_symbol
 

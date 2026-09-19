@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -93,14 +94,31 @@ class PyrightSemanticProvider:
         return result or []
 
     async def diagnostics(self, project_root: Path, path: Path | None = None) -> list[dict[str, Any]]:
-        await self._prepare(project_root, path)
-        return []
+        client, _root, target = await self._prepare(project_root, path)
+        if path is not None:
+            deadline = asyncio.get_running_loop().time() + 2.0
+            while asyncio.get_running_loop().time() < deadline:
+                items = client.diagnostics(target)
+                if items:
+                    return items
+                await asyncio.sleep(0.1)
+            return client.diagnostics(target)
+        return client.diagnostics(None)
 
-    async def refresh(self, project_root: Path, changed_files: list[Path]) -> None:
+    async def refresh(
+        self,
+        project_root: Path,
+        *,
+        created: list[Path] | None = None,
+        changed: list[Path] | None = None,
+        deleted: list[Path] | None = None,
+    ) -> None:
         root = resolve_project_root(project_root)
-        session = await self._manager.get_or_start(root)
-        await session.client.refresh(
-            [ensure_inside_project(root, path) for path in changed_files]
+        await self._manager.refresh(
+            root,
+            created=[ensure_inside_project(root, path) for path in created or []],
+            changed=[ensure_inside_project(root, path) for path in changed or []],
+            deleted=[ensure_inside_project(root, path) for path in deleted or []],
         )
 
     async def _prepare(

@@ -15,6 +15,7 @@ from python_refactor_mcp.adapters.pyright.semantic_provider import (
 from python_refactor_mcp.models.common import SourcePosition
 from python_refactor_mcp.models.errors import RefactorError
 from python_refactor_mcp.providers.semantic import SemanticProvider
+from python_refactor_mcp.utils.packages import module_file, resolve_source_root
 from python_refactor_mcp.utils.paths import ensure_inside_project, resolve_project_root
 from python_refactor_mcp.utils.summaries import MAX_REFERENCES_DEFAULT, format_location, truncate_items
 
@@ -34,8 +35,60 @@ class SemanticService:
     async def hover(self, project_root: Path, position: SourcePosition) -> HoverInfo:
         return await self._provider.hover(project_root, position)
 
-    async def refresh(self, project_root: Path, changed_files: list[Path]) -> None:
-        await self._provider.refresh(project_root, changed_files)
+    async def diagnostics(self, project_root: Path, path: Path | None = None) -> object:
+        return await self._provider.diagnostics(project_root, path)
+
+    async def resolve_symbol(
+        self,
+        project_root: str | Path,
+        module: str,
+        symbol: str,
+        source_root: str | None = None,
+    ) -> SourcePosition:
+        root = resolve_project_root(project_root)
+        src = resolve_source_root(root, source_root, dotted_module=module)
+        path = module_file(src, module)
+        if path is None:
+            raise RefactorError("SOURCE_NOT_FOUND", f"module not found: {module}")
+        symbols = await self._provider.document_symbols(root, path)
+        items = symbols if isinstance(symbols, list) else []
+        matches = _match_document_symbols(path, items, symbol)
+        if not matches:
+            raise RefactorError("SYMBOL_NOT_FOUND", f"symbol not found: {symbol}")
+        if len(matches) > 1:
+            raise RefactorError("AMBIGUOUS_SYMBOL", f"symbol is not unique: {symbol}")
+        return matches[0]
+
+    async def module_defines_symbol(
+        self,
+        project_root: str | Path,
+        module: str,
+        symbol: str,
+        source_root: str | None = None,
+    ) -> bool:
+        root = resolve_project_root(project_root)
+        src = resolve_source_root(root, source_root, dotted_module=module)
+        path = module_file(src, module)
+        if path is None:
+            return False
+        symbols = await self._provider.document_symbols(root, path)
+        items = symbols if isinstance(symbols, list) else []
+        return bool(_match_document_symbols(path, items, symbol.split(".")[-1]))
+
+    async def refresh(
+        self,
+        project_root: Path,
+        *,
+        created: list[Path] | None = None,
+        changed: list[Path] | None = None,
+        deleted: list[Path] | None = None,
+    ) -> None:
+        await self._provider.refresh(
+            project_root,
+            created=created,
+            changed=changed,
+            deleted=deleted,
+        )
 
     async def inspect(
         self,
@@ -111,6 +164,69 @@ def _symbol_name(path: Path, position: SourcePosition, hover: HoverInfo | None) 
     if hover and hover.contents:
         return hover.contents.splitlines()[0][:80]
     return ""
+
+
+def _match_document_symbols(path: Path, symbols: list[object], symbol: str) -> list[SourcePosition]:
+    if "." in symbol:
+        owner, leaf = symbol.split(".", 1)
+        matches: list[SourcePosition] = []
+        for item in _top_level_symbols(symbols):
+            if _document_symbol_name(item) != owner:
+                continue
+            for child in _symbol_children(item):
+                if _document_symbol_name(child) == leaf:
+                    matches.append(_symbol_position(path, child))
+        for item in _top_level_symbols(symbols):
+            if _document_symbol_name(item) == leaf and item.get("containerName") == owner:
+                matches.append(_symbol_position(path, item))
+        return matches
+    return [
+        _symbol_position(path, item)
+        for item in _top_level_symbols(symbols)
+        if _document_symbol_name(item) == symbol and not item.get("containerName")
+    ]
+
+
+def _top_level_symbols(symbols: list[object]) -> list[dict[str, object]]:
+    return [item for item in symbols if isinstance(item, dict)]
+
+
+def _symbol_children(item: dict[str, object]) -> list[dict[str, object]]:
+    children = item.get("children") or []
+    if not isinstance(children, list):
+        return []
+    return [child for child in children if isinstance(child, dict)]
+
+
+def _document_symbol_name(item: dict[str, object]) -> str:
+    name = item.get("name")
+    return name if isinstance(name, str) else ""
+
+
+def _symbol_position(path: Path, item: dict[str, object]) -> SourcePosition:
+    selection = item.get("selectionRange")
+    if not isinstance(selection, dict):
+        location = item.get("location")
+        selection = location.get("range") if isinstance(location, dict) else item.get("range")
+    start = selection.get("start") if isinstance(selection, dict) else {}
+    if not isinstance(start, dict):
+        start = {}
+    line = int(start.get("line", 0) or 0)
+    character = int(start.get("character", 0) or 0)
+    name = _document_symbol_name(item)
+    if name:
+        try:
+            text_line = path.read_text(encoding="utf-8").splitlines()[line]
+        except (OSError, IndexError, UnicodeDecodeError):
+            text_line = ""
+        idx = text_line.find(name)
+        if idx >= 0:
+            character = idx
+    return SourcePosition(
+        path=path,
+        line=line,
+        character=character,
+    )
 
 
 def _compact_type(hover: HoverInfo | None) -> str | None:

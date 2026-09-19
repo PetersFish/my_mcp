@@ -11,6 +11,11 @@ from python_refactor_mcp.models.errors import RefactorError
 
 JsonObject = dict[str, Any]
 
+FILE_CREATED = 1
+FILE_CHANGED = 2
+FILE_DELETED = 3
+DIAGNOSTICS_SETTLE_SECONDS = 0.4
+
 
 class PyrightLspClient:
     def __init__(self) -> None:
@@ -19,6 +24,8 @@ class PyrightLspClient:
         self._pending: dict[int, asyncio.Future[Any]] = {}
         self._next_id = 1
         self._lock = asyncio.Lock()
+        self._opened: set[str] = set()
+        self._diagnostics: dict[str, list[JsonObject]] = {}
 
     async def start(
         self,
@@ -85,24 +92,88 @@ class PyrightLspClient:
 
     async def notify(self, method: str, params: JsonObject) -> None:
         await self._send({"jsonrpc": "2.0", "method": method, "params": params})
+        if method == "textDocument/didOpen":
+            uri = (params.get("textDocument") or {}).get("uri")
+            if isinstance(uri, str):
+                self._opened.add(uri)
+        elif method == "textDocument/didClose":
+            uri = (params.get("textDocument") or {}).get("uri")
+            if isinstance(uri, str):
+                self._opened.discard(uri)
 
     async def health_check(self) -> bool:
         process = self._process
         return process is not None and process.returncode is None
 
-    async def refresh(self, changed_files: list[Path]) -> None:
-        changes = []
-        for path in changed_files:
-            resolved = path.resolve()
-            exists = resolved.exists()
-            changes.append(
-                {
-                    "uri": resolved.as_uri(),
-                    "type": 1 if exists and path.suffix else (2 if exists else 3),
+    async def refresh(
+        self,
+        *,
+        created: list[Path] | None = None,
+        changed: list[Path] | None = None,
+        deleted: list[Path] | None = None,
+        settle_timeout: float = DIAGNOSTICS_SETTLE_SECONDS,
+    ) -> None:
+        deleted_paths = {path.resolve() for path in deleted or []}
+        created_paths = {path.resolve() for path in created or []} - deleted_paths
+        changed_paths = {path.resolve() for path in changed or []} - deleted_paths - created_paths
+        watched: list[JsonObject] = []
+        for path in deleted_paths:
+            watched.append({"uri": path.as_uri(), "type": FILE_DELETED})
+            await self._close_document(path)
+            self._diagnostics.pop(path.as_uri(), None)
+        for path, change_type in (
+            *((item, FILE_CREATED) for item in created_paths),
+            *((item, FILE_CHANGED) for item in changed_paths),
+        ):
+            watched.append({"uri": path.as_uri(), "type": change_type})
+            await self._reopen_document(path)
+        if watched:
+            await self.notify("workspace/didChangeWatchedFiles", {"changes": watched})
+        if settle_timeout > 0:
+            await asyncio.sleep(settle_timeout)
+
+    def diagnostics(self, path: Path | None = None) -> list[JsonObject]:
+        if path is None:
+            items: list[JsonObject] = []
+            for uri, diags in self._diagnostics.items():
+                for diag in diags:
+                    item = dict(diag)
+                    item.setdefault("uri", uri)
+                    items.append(item)
+            return items
+        uri = path.resolve().as_uri()
+        items = []
+        for diag in self._diagnostics.get(uri, []):
+            item = dict(diag)
+            item.setdefault("uri", uri)
+            items.append(item)
+        return items
+
+    async def _close_document(self, path: Path) -> None:
+        uri = path.as_uri()
+        if uri not in self._opened:
+            return
+        await self.notify("textDocument/didClose", {"textDocument": {"uri": uri}})
+
+    async def _reopen_document(self, path: Path) -> None:
+        await self._close_document(path)
+        if not path.is_file():
+            return
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return
+        await self.notify(
+            "textDocument/didOpen",
+            {
+                "textDocument": {
+                    "uri": path.as_uri(),
+                    "languageId": "python",
+                    "version": 1,
+                    "text": text,
                 }
-            )
-        if changes:
-            await self.notify("workspace/didChangeWatchedFiles", {"changes": changes})
+            },
+        )
 
     async def shutdown(self) -> None:
         try:
@@ -128,6 +199,8 @@ class PyrightLspClient:
                 except (asyncio.CancelledError, Exception):
                     pass
             self._process = None
+            self._opened.clear()
+            self._diagnostics.clear()
             for future in self._pending.values():
                 if not future.done():
                     future.cancel()
@@ -162,6 +235,14 @@ class PyrightLspClient:
                     )
 
     def _dispatch(self, message: JsonObject) -> None:
+        method = message.get("method")
+        if method == "textDocument/publishDiagnostics":
+            params = message.get("params") or {}
+            uri = params.get("uri")
+            if isinstance(uri, str):
+                diagnostics = params.get("diagnostics") or []
+                self._diagnostics[uri] = list(diagnostics) if isinstance(diagnostics, list) else []
+            return
         if "id" in message and "method" not in message:
             request_id = message["id"]
             future = self._pending.pop(request_id, None)

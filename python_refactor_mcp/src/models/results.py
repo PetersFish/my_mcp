@@ -26,3 +26,8 @@ class RefactorResult(BaseModel):
     git_dirty_before: bool = False
     verification: dict[str, str] = Field(default_factory=dict)
     error: str | None = None
+    summary: str | None = None
+    metrics: dict[str, int] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    details: dict[str, object] = Field(default_factory=dict)
+    semantic_status: str | None = None

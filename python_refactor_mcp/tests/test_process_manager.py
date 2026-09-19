@@ -22,8 +22,14 @@ class FakeClient:
     async def health_check(self) -> bool:
         return self.healthy
 
-    async def refresh(self, changed_files: list[Path]) -> None:
-        self.refreshes.append(list(changed_files))
+    async def refresh(
+        self,
+        *,
+        created: list[Path] | None = None,
+        changed: list[Path] | None = None,
+        deleted: list[Path] | None = None,
+    ) -> None:
+        self.refreshes.append(list(changed or []))
 
     async def shutdown(self) -> None:
         self.shutdowns += 1

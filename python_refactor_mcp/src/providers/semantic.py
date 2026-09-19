@@ -19,4 +19,11 @@ class SemanticProvider(Protocol):
 
     async def diagnostics(self, project_root: Path, path: Path | None = None) -> object: ...
 
-    async def refresh(self, project_root: Path, changed_files: list[Path]) -> None: ...
+    async def refresh(
+        self,
+        project_root: Path,
+        *,
+        created: list[Path] | None = None,
+        changed: list[Path] | None = None,
+        deleted: list[Path] | None = None,
+    ) -> None: ...

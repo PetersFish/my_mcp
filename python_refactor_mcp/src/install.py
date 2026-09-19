@@ -7,8 +7,38 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# #region agent log
+def _agent_dbg(hypothesis_id: str, location: str, message: str, data: dict[str, object]) -> None:
+    payload = {
+        "sessionId": "3b215c",
+        "runId": "pre-fix",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    line = json.dumps(payload, ensure_ascii=False)
+    for path_str in (
+        "/Users/yuping/Documents/workspace/my_mcp/.cursor/debug-3b215c.log",
+        str(Path(__file__).resolve().parent.parent / ".cursor" / "debug-3b215c.log"),
+    ):
+        try:
+            path = Path(path_str)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+        except Exception:
+            pass
+    try:
+        print(f"[debug-3b215c] {line}", file=sys.stderr)
+    except Exception:
+        pass
+# #endregion
 
 SERVER_NAME = "python-refactor"
 SKILL_NAME = "python-refactor"
@@ -266,9 +296,42 @@ def _decode_captured(stream: bytes) -> str:
 
 
 def _run(command: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    raw = subprocess.run(command, env=env, capture_output=True)
+    # #region agent log
+    _agent_dbg(
+        "B",
+        "install.py:_run:entry",
+        "CLI subprocess capturing bytes",
+        {
+            "command0": command[0] if command else "",
+            "command_tail": command[1:8],
+            "preferred_encoding": locale.getpreferredencoding(False),
+            "os_name": os.name,
+            "text_mode": False,
+        },
+    )
+    # #endregion
+    try:
+        raw = subprocess.run(command, env=env, capture_output=True)
+    except UnicodeDecodeError as exc:
+        # #region agent log
+        _agent_dbg(
+            "B",
+            "install.py:_run:UnicodeDecodeError",
+            "communicate/text decode failed in _run",
+            {"error": str(exc), "command0": command[0] if command else ""},
+        )
+        # #endregion
+        raise
     stdout = _decode_captured(raw.stdout or b"")
     stderr = _decode_captured(raw.stderr or b"")
+    # #region agent log
+    _agent_dbg(
+        "B",
+        "install.py:_run:exit",
+        "CLI subprocess finished",
+        {"returncode": raw.returncode, "stdout_len": len(stdout), "stderr_len": len(stderr)},
+    )
+    # #endregion
     return subprocess.CompletedProcess(raw.args, raw.returncode, stdout, stderr)
 
 
@@ -416,27 +479,90 @@ def ensure_venv(package_root: Path, messages: list[str]) -> None:
         raise RuntimeError("需要 uv 来创建虚拟环境。请先安装 uv。")
     venv_dir = package_root / ".venv"
     if not venv_dir.exists():
-        raw = subprocess.run([uv, "venv", str(venv_dir)], cwd=package_root, capture_output=True)
+        # #region agent log
+        _agent_dbg(
+            "A",
+            "install.py:ensure_venv:uv_venv",
+            "about to run uv venv (bytes mode)",
+            {
+                "preferred_encoding": locale.getpreferredencoding(False),
+                "os_name": os.name,
+                "text_mode": False,
+            },
+        )
+        # #endregion
+        try:
+            raw = subprocess.run([uv, "venv", str(venv_dir)], cwd=package_root, capture_output=True)
+        except UnicodeDecodeError as exc:
+            # #region agent log
+            _agent_dbg(
+                "A",
+                "install.py:ensure_venv:uv_venv:UnicodeDecodeError",
+                "uv venv decode failed",
+                {"error": str(exc)},
+            )
+            # #endregion
+            raise
         stdout = _decode_captured(raw.stdout or b"")
         stderr = _decode_captured(raw.stderr or b"")
         if raw.returncode != 0:
             raise RuntimeError(f"uv venv 失败: {(stderr or stdout).strip()}")
     python = venv_python(package_root)
-    raw = subprocess.run(
-        [uv, "pip", "install", "--python", str(python), "-e", "."],
-        cwd=package_root,
-        capture_output=True,
+    # #region agent log
+    _agent_dbg(
+        "A",
+        "install.py:ensure_venv:uv_pip",
+        "about to run uv pip install (bytes mode)",
+        {
+            "preferred_encoding": locale.getpreferredencoding(False),
+            "os_name": os.name,
+            "python": str(python),
+            "text_mode": False,
+        },
     )
+    # #endregion
+    try:
+        raw = subprocess.run(
+            [uv, "pip", "install", "--python", str(python), "-e", "."],
+            cwd=package_root,
+            capture_output=True,
+        )
+    except UnicodeDecodeError as exc:
+        # #region agent log
+        _agent_dbg(
+            "A",
+            "install.py:ensure_venv:uv_pip:UnicodeDecodeError",
+            "uv pip decode failed",
+            {"error": str(exc)},
+        )
+        # #endregion
+        raise
     stdout = _decode_captured(raw.stdout or b"")
     stderr = _decode_captured(raw.stderr or b"")
     if raw.returncode != 0:
         raise RuntimeError(f"uv pip install 失败: {(stderr or stdout).strip()}")
+    # #region agent log
+    _agent_dbg("A", "install.py:ensure_venv:done", "venv ready", {"venv_dir": str(venv_dir)})
+    # #endregion
     messages.append(f"已准备虚拟环境 {venv_dir}")
 
 
 def probe_mcp_initialize(package_root: Path, env: dict[str, str]) -> None:
     python = venv_python(package_root)
     command = [str(python if python.exists() else sys.executable), "-m", "python_refactor_mcp"]
+    # #region agent log
+    _agent_dbg(
+        "C",
+        "install.py:probe_mcp_initialize:entry",
+        "about to Popen MCP server",
+        {
+            "preferred_encoding": locale.getpreferredencoding(False),
+            "os_name": os.name,
+            "python": command[0],
+            "text_mode": True,
+        },
+    )
+    # #endregion
     proc = subprocess.Popen(
         command,
         cwd=package_root,
@@ -466,14 +592,39 @@ def probe_mcp_initialize(package_root: Path, env: dict[str, str]) -> None:
         deadline = time.time() + 15
         while time.time() < deadline:
             if proc.poll() is not None:
-                stderr = proc.stderr.read() if proc.stderr else ""
+                try:
+                    stderr = proc.stderr.read() if proc.stderr else ""
+                except UnicodeDecodeError as exc:
+                    # #region agent log
+                    _agent_dbg(
+                        "C",
+                        "install.py:probe_mcp_initialize:stderr_decode",
+                        "stderr read failed under text=True",
+                        {"error": str(exc)},
+                    )
+                    # #endregion
+                    raise
                 raise RuntimeError(stderr.strip() or f"MCP 进程退出码 {proc.returncode}")
-            line = proc.stdout.readline() if proc.stdout else ""
+            try:
+                line = proc.stdout.readline() if proc.stdout else ""
+            except UnicodeDecodeError as exc:
+                # #region agent log
+                _agent_dbg(
+                    "C",
+                    "install.py:probe_mcp_initialize:stdout_decode",
+                    "stdout readline failed under text=True",
+                    {"error": str(exc)},
+                )
+                # #endregion
+                raise
             if not line:
                 time.sleep(0.05)
                 continue
             stdout += line
             if '"result"' in stdout or '"id": 1' in stdout or '"id":1' in stdout:
+                # #region agent log
+                _agent_dbg("C", "install.py:probe_mcp_initialize:ok", "initialize succeeded", {})
+                # #endregion
                 return
         raise RuntimeError((proc.stderr.read() if proc.stderr else "") or "MCP initialize 超时")
     finally:
@@ -492,23 +643,46 @@ def setup(
 ) -> CommandResult:
     env = env or os.environ.copy()
     messages: list[str] = []
+    # #region agent log
+    _agent_dbg(
+        "A,B,C,E",
+        "install.py:setup:entry",
+        "setup stages begin",
+        {"client": client, "skip_venv": skip_venv, "skip_doctor": skip_doctor},
+    )
+    # #endregion
     if not skip_venv:
         ensure_venv(package_root, messages)
+        # #region agent log
+        _agent_dbg("A", "install.py:setup:after_venv", "ensure_venv completed", {})
+        # #endregion
     if wants_client(client, "cursor"):
         register_cursor(home, package_root, messages)
         copy_skill(skill_source_dir(package_root), cursor_skill_dir(home))
         messages.append(f"已安装 skill 到 {cursor_skill_dir(home)}")
+        # #region agent log
+        _agent_dbg("B", "install.py:setup:after_cursor", "cursor registered", {})
+        # #endregion
     if wants_client(client, "claude"):
         register_claude(home, env, package_root, messages)
         copy_skill(skill_source_dir(package_root), claude_skill_dir(home))
         messages.append(f"已安装 skill 到 {claude_skill_dir(home)}")
+        # #region agent log
+        _agent_dbg("B", "install.py:setup:after_claude", "claude registered", {})
+        # #endregion
     if wants_client(client, "opencode"):
         register_opencode(home, env, package_root, messages)
         copy_skill(skill_source_dir(package_root), opencode_skill_dir(home))
         messages.append(f"已安装 skill 到 {opencode_skill_dir(home)}")
+        # #region agent log
+        _agent_dbg("B", "install.py:setup:after_opencode", "opencode registered", {})
+        # #endregion
     install_instruction_files(home, package_root, client, messages)
     if skip_doctor:
         return CommandResult(ok=True, messages=messages)
+    # #region agent log
+    _agent_dbg("C", "install.py:setup:before_doctor", "about to run doctor/probe", {})
+    # #endregion
     health = doctor(package_root=package_root, home=home, client=client, env=env)
     messages.extend(health.messages)
     return CommandResult(ok=health.ok, messages=messages, issues=health.issues)
@@ -613,15 +787,56 @@ def main(argv: list[str] | None = None) -> int:
     home = Path(os.environ.get("HOME") or os.environ.get("USERPROFILE") or Path.home())
     root = package_root_from_here()
     env = os.environ.copy()
-    if parsed.command == "setup":
-        result = setup(package_root=root, home=home, client=parsed.client, env=env)
-    elif parsed.command == "doctor":
-        result = doctor(package_root=root, home=home, client=parsed.client, env=env)
-    elif parsed.command == "uninstall":
-        result = uninstall(home=home, client=parsed.client, purge=parsed.purge, env=env)
-    else:
-        print("用法: python -m python_refactor_mcp setup|doctor|uninstall", file=sys.stderr)
-        return 2
+    # #region agent log
+    _agent_dbg(
+        "D,E",
+        "install.py:main:entry",
+        "setup/doctor entry",
+        {
+            "command": parsed.command,
+            "client": parsed.client,
+            "preferred_encoding": locale.getpreferredencoding(False),
+            "os_name": os.name,
+            "install_file": str(Path(__file__).resolve()),
+            "package_root": str(root),
+            "has_decode_captured": callable(_decode_captured),
+            "python": sys.executable,
+            "version": sys.version,
+        },
+    )
+    # #endregion
+    try:
+        if parsed.command == "setup":
+            result = setup(package_root=root, home=home, client=parsed.client, env=env)
+        elif parsed.command == "doctor":
+            result = doctor(package_root=root, home=home, client=parsed.client, env=env)
+        elif parsed.command == "uninstall":
+            result = uninstall(home=home, client=parsed.client, purge=parsed.purge, env=env)
+        else:
+            print("用法: python -m python_refactor_mcp setup|doctor|uninstall", file=sys.stderr)
+            return 2
+    except Exception as exc:
+        # #region agent log
+        _agent_dbg(
+            "D,E",
+            "install.py:main:exception",
+            "uncaught exception during install command",
+            {
+                "type": type(exc).__name__,
+                "error": str(exc),
+                "traceback": traceback.format_exc()[-2000:],
+            },
+        )
+        # #endregion
+        raise
+    # #region agent log
+    _agent_dbg(
+        "D,E",
+        "install.py:main:exit",
+        "command finished",
+        {"ok": result.ok, "messages": len(result.messages), "issues": len(result.issues)},
+    )
+    # #endregion
     for message in result.messages:
         print(message)
     for issue in result.issues:

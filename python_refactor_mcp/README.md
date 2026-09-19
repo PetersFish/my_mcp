@@ -77,29 +77,26 @@ python -m python_refactor_mcp uninstall --purge   # 同时删除 skill 目录和
 }
 ```
 
-OpenCode `~/.config/opencode/opencode.json`：
+OpenCode `~/.config/opencode/opencode.json`（`mcp.<name>` 直挂，不要写 `mcp.servers`）：
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "servers": {
-      "python-refactor": {
-        "type": "local",
-        "command": [
-          "/absolute/path/to/python_refactor_mcp/.venv/bin/python",
-          "-m",
-          "python_refactor_mcp"
-        ]
-      }
+    "python-refactor": {
+      "type": "local",
+      "enabled": true,
+      "command": [
+        "/absolute/path/to/python_refactor_mcp/.venv/bin/python",
+        "-m",
+        "python_refactor_mcp"
+      ]
     }
   }
 }
 ```
 
 Windows 上把上面的 `command` 换成 `.venv\\Scripts\\python.exe` 的绝对路径即可。
-
-若你的 OpenCode 仍是旧格式，把 `python-refactor` 直接写在 `mcp` 下，而不是 `mcp.servers`。
 
 **Windows 安装注意：** 仓库里的 `python_refactor_mcp → src` 是给 macOS/Linux 可编辑开发用的符号链接。Windows 若 Git 未启用 symlink，请用官方路径安装：`uv sync` / `uv sync --extra dev` 后走 hatch editable，再 `python -m python_refactor_mcp setup`；不要依赖把 symlink checkout 成文本文件。`project_root` 在两端都必须是目标项目的绝对路径。
 

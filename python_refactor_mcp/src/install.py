@@ -10,31 +10,6 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# #region agent log
-def _agent_dbg(hypothesis_id: str, location: str, message: str, data: dict[str, object]) -> None:
-    payload = {
-        "sessionId": "614904",
-        "runId": "pre-fix",
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    line = json.dumps(payload, ensure_ascii=False)
-    path = Path(__file__).resolve().parent.parent / ".cursor" / "debug-614904.log"
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
-    except Exception:
-        pass
-    try:
-        print(f"[debug-614904] {line}", file=sys.stderr)
-    except Exception:
-        pass
-# #endregion
-
 SERVER_NAME = "python-refactor"
 SKILL_NAME = "python-refactor"
 BLOCK_START = "<!-- python-refactor-mcp:start -->"
@@ -178,6 +153,7 @@ def _opencode_server_entry(package_root: Path) -> dict[str, object]:
     return {
         "type": "local",
         "command": [python, "-m", "python_refactor_mcp"],
+        "enabled": True,
     }
 
 
@@ -281,57 +257,18 @@ def find_command(name: str, env: dict[str, str] | None = None) -> str | None:
     return shutil.which(name, path=(env or os.environ).get("PATH"))
 
 
-def _decode_captured(stream: bytes, *, hypothesis_id: str, location: str, label: str) -> str:
+def _decode_captured(stream: bytes) -> str:
     preferred = locale.getpreferredencoding(False)
-    utf8_ok = True
-    try:
-        stream.decode("utf-8")
-    except UnicodeDecodeError:
-        utf8_ok = False
     try:
         return stream.decode(preferred)
-    except UnicodeDecodeError as exc:
-        # #region agent log
-        _agent_dbg(
-            hypothesis_id,
-            location,
-            "locale decode failed on subprocess output",
-            {
-                "label": label,
-                "preferred_encoding": preferred,
-                "encoding": exc.encoding,
-                "reason": exc.reason,
-                "start": exc.start,
-                "end": exc.end,
-                "byte_at_start": hex(stream[exc.start]) if exc.start < len(stream) else None,
-                "has_utf8_ellipsis": b"\xe2\x80\xa6" in stream,
-                "utf8_ok": utf8_ok,
-                "length": len(stream),
-                "preview_hex": stream[:80].hex(),
-            },
-        )
-        # #endregion
-        raise
+    except UnicodeDecodeError:
+        return stream.decode("utf-8", errors="replace")
 
 
 def _run(command: list[str], env: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    label = " ".join(command[:6])
-    # #region agent log
-    _agent_dbg(
-        "B,C,E",
-        "install.py:_run:entry",
-        "CLI subprocess capturing bytes",
-        {
-            "command0": command[0] if command else "",
-            "command_tail": command[1:8],
-            "preferred_encoding": locale.getpreferredencoding(False),
-            "os_name": os.name,
-        },
-    )
-    # #endregion
     raw = subprocess.run(command, env=env, capture_output=True)
-    stdout = _decode_captured(raw.stdout or b"", hypothesis_id="B,C,E", location="install.py:_run:stdout", label=label)
-    stderr = _decode_captured(raw.stderr or b"", hypothesis_id="B,C,E", location="install.py:_run:stderr", label=label)
+    stdout = _decode_captured(raw.stdout or b"")
+    stderr = _decode_captured(raw.stderr or b"")
     return subprocess.CompletedProcess(raw.args, raw.returncode, stdout, stderr)
 
 
@@ -355,14 +292,13 @@ def write_opencode_mcp(home: Path, package_root: Path, messages: list[str]) -> N
         mcp = {}
         data["mcp"] = mcp
     entry = _opencode_server_entry(package_root)
-    servers = mcp.get("servers")
-    if isinstance(mcp.get(SERVER_NAME), dict) and not isinstance(servers, dict):
-        mcp[SERVER_NAME] = entry
-    else:
-        if not isinstance(servers, dict):
-            servers = {}
-            mcp["servers"] = servers
-        servers[SERVER_NAME] = entry
+    # OpenCode schema: mcp.<name> is McpLocalConfig|McpRemoteConfig — NOT mcp.servers.<name>.
+    legacy_servers = mcp.get("servers")
+    mcp[SERVER_NAME] = entry
+    if isinstance(legacy_servers, dict) and SERVER_NAME in legacy_servers:
+        del legacy_servers[SERVER_NAME]
+        if not legacy_servers:
+            del mcp["servers"]
     if "$schema" not in data:
         data["$schema"] = OPENCODE_SCHEMA
     _write_json(path, data)
@@ -461,6 +397,8 @@ def unregister_opencode(home: Path, env: dict[str, str], messages: list[str]) ->
             servers = mcp.get("servers")
             if isinstance(servers, dict) and SERVER_NAME in servers:
                 del servers[SERVER_NAME]
+                if not servers:
+                    del mcp["servers"]
                 changed = True
             if SERVER_NAME in mcp:
                 del mcp[SERVER_NAME]
@@ -478,43 +416,19 @@ def ensure_venv(package_root: Path, messages: list[str]) -> None:
         raise RuntimeError("需要 uv 来创建虚拟环境。请先安装 uv。")
     venv_dir = package_root / ".venv"
     if not venv_dir.exists():
-        # #region agent log
-        _agent_dbg(
-            "A",
-            "install.py:ensure_venv:uv_venv",
-            "about to run uv venv",
-            {
-                "preferred_encoding": locale.getpreferredencoding(False),
-                "os_name": os.name,
-                "venv_exists": False,
-            },
-        )
-        # #endregion
         raw = subprocess.run([uv, "venv", str(venv_dir)], cwd=package_root, capture_output=True)
-        stdout = _decode_captured(raw.stdout or b"", hypothesis_id="A", location="install.py:ensure_venv:uv_venv:stdout", label="uv venv")
-        stderr = _decode_captured(raw.stderr or b"", hypothesis_id="A", location="install.py:ensure_venv:uv_venv:stderr", label="uv venv")
+        stdout = _decode_captured(raw.stdout or b"")
+        stderr = _decode_captured(raw.stderr or b"")
         if raw.returncode != 0:
             raise RuntimeError(f"uv venv 失败: {(stderr or stdout).strip()}")
     python = venv_python(package_root)
-    # #region agent log
-    _agent_dbg(
-        "A",
-        "install.py:ensure_venv:uv_pip",
-        "about to run uv pip install",
-        {
-            "preferred_encoding": locale.getpreferredencoding(False),
-            "os_name": os.name,
-            "python": str(python),
-        },
-    )
-    # #endregion
     raw = subprocess.run(
         [uv, "pip", "install", "--python", str(python), "-e", "."],
         cwd=package_root,
         capture_output=True,
     )
-    stdout = _decode_captured(raw.stdout or b"", hypothesis_id="A", location="install.py:ensure_venv:uv_pip:stdout", label="uv pip")
-    stderr = _decode_captured(raw.stderr or b"", hypothesis_id="A", location="install.py:ensure_venv:uv_pip:stderr", label="uv pip")
+    stdout = _decode_captured(raw.stdout or b"")
+    stderr = _decode_captured(raw.stderr or b"")
     if raw.returncode != 0:
         raise RuntimeError(f"uv pip install 失败: {(stderr or stdout).strip()}")
     messages.append(f"已准备虚拟环境 {venv_dir}")
@@ -523,18 +437,6 @@ def ensure_venv(package_root: Path, messages: list[str]) -> None:
 def probe_mcp_initialize(package_root: Path, env: dict[str, str]) -> None:
     python = venv_python(package_root)
     command = [str(python if python.exists() else sys.executable), "-m", "python_refactor_mcp"]
-    # #region agent log
-    _agent_dbg(
-        "D",
-        "install.py:probe_mcp_initialize:entry",
-        "about to Popen MCP server in text mode",
-        {
-            "preferred_encoding": locale.getpreferredencoding(False),
-            "os_name": os.name,
-            "python": command[0],
-        },
-    )
-    # #endregion
     proc = subprocess.Popen(
         command,
         cwd=package_root,
@@ -564,31 +466,9 @@ def probe_mcp_initialize(package_root: Path, env: dict[str, str]) -> None:
         deadline = time.time() + 15
         while time.time() < deadline:
             if proc.poll() is not None:
-                try:
-                    stderr = proc.stderr.read() if proc.stderr else ""
-                except UnicodeDecodeError as exc:
-                    # #region agent log
-                    _agent_dbg(
-                        "D",
-                        "install.py:probe_mcp_initialize:stderr_decode",
-                        "UnicodeDecodeError reading MCP stderr",
-                        {"encoding": exc.encoding, "reason": exc.reason, "start": exc.start},
-                    )
-                    # #endregion
-                    raise
+                stderr = proc.stderr.read() if proc.stderr else ""
                 raise RuntimeError(stderr.strip() or f"MCP 进程退出码 {proc.returncode}")
-            try:
-                line = proc.stdout.readline() if proc.stdout else ""
-            except UnicodeDecodeError as exc:
-                # #region agent log
-                _agent_dbg(
-                    "D",
-                    "install.py:probe_mcp_initialize:stdout_decode",
-                    "UnicodeDecodeError reading MCP stdout",
-                    {"encoding": exc.encoding, "reason": exc.reason, "start": exc.start},
-                )
-                # #endregion
-                raise
+            line = proc.stdout.readline() if proc.stdout else ""
             if not line:
                 time.sleep(0.05)
                 continue
@@ -612,25 +492,6 @@ def setup(
 ) -> CommandResult:
     env = env or os.environ.copy()
     messages: list[str] = []
-    # #region agent log
-    _agent_dbg(
-        "A,B,C,D,E",
-        "install.py:setup:entry",
-        "setup started",
-        {
-            "os_name": os.name,
-            "preferred_encoding": locale.getpreferredencoding(False),
-            "utf8_mode": getattr(sys.flags, "utf8_mode", None),
-            "client": client,
-            "skip_venv": skip_venv,
-            "skip_doctor": skip_doctor,
-            "has_claude": bool(find_command("claude", env)),
-            "has_opencode": bool(find_command("opencode", env)),
-            "has_uv": bool(shutil.which("uv")),
-            "venv_exists": (package_root / ".venv").exists(),
-        },
-    )
-    # #endregion
     if not skip_venv:
         ensure_venv(package_root, messages)
     if wants_client(client, "cursor"):

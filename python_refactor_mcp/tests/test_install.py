@@ -111,12 +111,48 @@ def test_setup_writes_opencode_json_and_agents_md_without_cli(tmp_path: Path) ->
     )
     assert result.ok
     data = json.loads((home / ".config" / "opencode" / "opencode.json").read_text(encoding="utf-8"))
-    assert SERVER_NAME in data["mcp"]["servers"]
-    assert data["mcp"]["servers"][SERVER_NAME]["type"] == "local"
+    assert SERVER_NAME in data["mcp"]
+    assert "servers" not in data["mcp"]
+    assert data["mcp"][SERVER_NAME]["type"] == "local"
+    assert data["mcp"][SERVER_NAME]["enabled"] is True
     agents = (home / ".config" / "opencode" / "AGENTS.md").read_text(encoding="utf-8")
     assert BLOCK_START in agents
     assert "python_refactor" in agents
     assert "Do NOT glob" in agents
+
+
+def test_setup_migrates_legacy_opencode_mcp_servers(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    cfg = home / ".config" / "opencode" / "opencode.json"
+    cfg.parent.mkdir(parents=True)
+    cfg.write_text(
+        json.dumps(
+            {
+                "$schema": "https://opencode.ai/config.json",
+                "mcp": {
+                    "servers": {
+                        SERVER_NAME: {
+                            "type": "local",
+                            "command": ["python", "-m", "python_refactor_mcp"],
+                        }
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = setup(
+        package_root=PACKAGE_ROOT,
+        home=home,
+        client="opencode",
+        skip_venv=True,
+        skip_doctor=True,
+        env=_empty_path_env(tmp_path),
+    )
+    assert result.ok
+    data = json.loads(cfg.read_text(encoding="utf-8"))
+    assert "servers" not in data["mcp"]
+    assert data["mcp"][SERVER_NAME]["enabled"] is True
 
 
 def test_setup_instruction_block_is_idempotent(tmp_path: Path) -> None:

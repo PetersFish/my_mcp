@@ -39,7 +39,7 @@ class PyrightSemanticProvider:
         self._manager = manager or PyrightProcessManager()
 
     async def definition(self, project_root: Path, position: SourcePosition) -> DefinitionHit | None:
-        client, root, path = await self._prepare(project_root, position.path)
+        client, root, path = await self._prepare(project_root, position.path, open_workspace=False)
         result = await client.request(
             "textDocument/definition",
             _text_position(path, position),
@@ -51,7 +51,45 @@ class PyrightSemanticProvider:
         return DefinitionHit(path=hit.path, line=hit.line, character=hit.character)
 
     async def references(self, project_root: Path, position: SourcePosition) -> ReferenceHits:
-        client, root, path = await self._prepare(project_root, position.path)
+        # Open target + import dependents only (not full-workspace didOpen flood).
+        client, root, path = await self._prepare(project_root, position.path, open_workspace=False)
+        await self._open_import_dependents(client, root, path)
+        locations = await self._references_request(client, root, path, position)
+        return ReferenceHits(locations=locations)
+
+    async def _open_import_dependents(
+        self,
+        client: PyrightLspClient,
+        root: Path,
+        path: Path,
+    ) -> None:
+        for dep in _find_import_dependents(root, path):
+            uri = dep.resolve().as_uri()
+            if uri in client._opened:
+                continue
+            try:
+                text = dep.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            await client.notify(
+                "textDocument/didOpen",
+                {
+                    "textDocument": {
+                        "uri": uri,
+                        "languageId": "python",
+                        "version": 1,
+                        "text": text,
+                    }
+                },
+            )
+
+    async def _references_request(
+        self,
+        client: PyrightLspClient,
+        root: Path,
+        path: Path,
+        position: SourcePosition,
+    ) -> list[SourcePosition]:
         result = await client.request(
             "textDocument/references",
             {
@@ -60,7 +98,7 @@ class PyrightSemanticProvider:
             },
         )
         locations = _as_locations(result)
-        safe = []
+        safe: list[SourcePosition] = []
         for item in locations:
             try:
                 safe.append(
@@ -72,20 +110,20 @@ class PyrightSemanticProvider:
                 )
             except ValueError:
                 continue
-        return ReferenceHits(locations=safe)
+        return safe
 
     async def hover(self, project_root: Path, position: SourcePosition) -> HoverInfo:
-        client, _root, path = await self._prepare(project_root, position.path)
+        client, _root, path = await self._prepare(project_root, position.path, open_workspace=False)
         result = await client.request("textDocument/hover", _text_position(path, position))
         return HoverInfo(contents=_hover_text(result))
 
     async def workspace_symbols(self, project_root: Path, query: str) -> list[dict[str, Any]]:
-        client, root, _path = await self._prepare(project_root, None)
+        client, root, _path = await self._prepare(project_root, None, open_workspace=True)
         result = await client.request("workspace/symbol", {"query": query})
         return result or []
 
     async def document_symbols(self, project_root: Path, path: Path) -> list[dict[str, Any]]:
-        client, _root, document = await self._prepare(project_root, path)
+        client, _root, document = await self._prepare(project_root, path, open_workspace=False)
         result = await client.request(
             "textDocument/documentSymbol",
             {"textDocument": {"uri": document.as_uri()}},
@@ -136,7 +174,7 @@ class PyrightSemanticProvider:
         project_root: Path,
         path: Path | None,
         *,
-        open_workspace: bool = True,
+        open_workspace: bool = False,
     ) -> tuple[PyrightLspClient, Path, Path]:
         root = resolve_project_root(project_root)
         session = await self._manager.get_or_start(root)
@@ -145,27 +183,34 @@ class PyrightSemanticProvider:
             raise RefactorError("LSP_PROTOCOL_ERROR", "semantic provider requires PyrightLspClient")
         target = root if path is None else ensure_inside_project(root, path)
         if path is not None and target.is_file():
-            await client.notify(
-                "textDocument/didOpen",
-                {
-                    "textDocument": {
-                        "uri": target.as_uri(),
-                        "languageId": "python",
-                        "version": 1,
-                        "text": target.read_text(encoding="utf-8"),
-                    }
-                },
-            )
+            uri = target.as_uri()
+            if uri not in client._opened:
+                await client.notify(
+                    "textDocument/didOpen",
+                    {
+                        "textDocument": {
+                            "uri": uri,
+                            "languageId": "python",
+                            "version": 1,
+                            "text": target.read_text(encoding="utf-8"),
+                        }
+                    },
+                )
         if open_workspace and not session.extra.get("workspace_opened"):
             await _open_workspace_python_files(client, root)
             session.extra["workspace_opened"] = True
         return client, root, target
 
 
+_SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__"}
+
+
 async def _open_workspace_python_files(client: PyrightLspClient, root: Path) -> None:
-    skip = {".git", ".venv", "venv", "node_modules", "__pycache__"}
     for path in root.rglob("*.py"):
-        if any(part in skip for part in path.parts):
+        if any(part in _SKIP_DIRS for part in path.parts):
+            continue
+        uri = path.resolve().as_uri()
+        if uri in client._opened:
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -175,13 +220,59 @@ async def _open_workspace_python_files(client: PyrightLspClient, root: Path) -> 
             "textDocument/didOpen",
             {
                 "textDocument": {
-                    "uri": path.resolve().as_uri(),
+                    "uri": uri,
                     "languageId": "python",
                     "version": 1,
                     "text": text,
                 }
             },
         )
+
+
+def _find_import_dependents(root: Path, target: Path) -> list[Path]:
+    """Return Python files that likely import ``target`` (lightweight text scan)."""
+    try:
+        rel = target.resolve().relative_to(root.resolve())
+    except ValueError:
+        return []
+    parts = list(rel.with_suffix("").parts)
+    if parts and parts[-1] == "__init__":
+        parts = parts[:-1]
+    if not parts:
+        return []
+    # Strip common source roots for dotted import matching.
+    for prefix in ("src", "lib"):
+        if parts and parts[0] == prefix:
+            parts = parts[1:]
+            break
+    dotted = ".".join(parts)
+    if not dotted:
+        return []
+    needles = (
+        f"import {dotted}",
+        f"from {dotted} ",
+        f"from {dotted}.",
+        f"from {'.'.join(parts[:-1])} import" if len(parts) > 1 else None,
+    )
+    needles = tuple(n for n in needles if n)
+    leaf = parts[-1]
+    dependents: list[Path] = []
+    for path in root.rglob("*.py"):
+        if any(part in _SKIP_DIRS for part in path.parts):
+            continue
+        if path.resolve() == target.resolve():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if any(needle in text for needle in needles):
+            dependents.append(path)
+            continue
+        # `from pkg import leaf` style
+        if f"import {leaf}" in text and dotted.rsplit(".", 1)[0] in text:
+            dependents.append(path)
+    return dependents
 
 
 def _text_position(path: Path, position: SourcePosition) -> dict[str, object]:

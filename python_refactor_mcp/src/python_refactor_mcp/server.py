@@ -164,17 +164,52 @@ def verify_refactor(
     root = Path(project_root)
     manager = default_manager()
     service = SemanticService()
+    files = changed_files or []
 
     def diagnostics_runner(diag_root: Path, changed: list[str]) -> str:
+        """One refresh/settle for the changed set, then read diagnostics with no wait."""
         try:
+            py_paths = [
+                diag_root / rel
+                for rel in changed
+                if rel.endswith(".py") and (diag_root / rel).is_file()
+            ]
+
+            async def _batch() -> str:
+                if py_paths:
+                    await service.refresh(diag_root, changed=py_paths)
+                for path in py_paths:
+                    items = await service.diagnostics(
+                        diag_root, path, wait_timeout=0.0
+                    )
+                    diags = items if isinstance(items, list) else []
+                    for item in diags:
+                        severity = (
+                            item.get("severity")
+                            if isinstance(item, dict)
+                            else getattr(item, "severity", None)
+                        )
+                        if severity in (1, "error", "Error"):
+                            return "failed"
+                return "ok"
+
+            return manager.runner.run(_batch())
+        except Exception:
+            return "skipped"
+
+    def pyright_lsp_runner(pyr_root: Path, changed: list[str]) -> str:
+        try:
+            session = manager._sessions.get(pyr_root.resolve())
+            if session is None:
+                return "skipped"
             for rel in changed:
                 if not rel.endswith(".py"):
                     continue
-                path = diag_root / rel
+                path = pyr_root / rel
                 if not path.is_file():
                     continue
                 diags = manager.runner.run(
-                    service.diagnostics(diag_root, path, wait_timeout=0.4)
+                    service.diagnostics(pyr_root, path, wait_timeout=0.0)
                 )
                 items = diags if isinstance(diags, list) else []
                 for item in items:
@@ -192,13 +227,14 @@ def verify_refactor(
     try:
         verification, remaining, samples = run_verification(
             root,
-            changed_files=changed_files or [],
+            changed_files=files,
             needles=needles or [],
             verify=verify,
             verification_mode=verification_mode if verify is None else None,
             pytest_args=pytest_args,
             dry_run=False,
             diagnostics_runner=diagnostics_runner,
+            pyright_runner=pyright_lsp_runner,
         )
     except RefactorError as exc:
         return exc.to_payload()

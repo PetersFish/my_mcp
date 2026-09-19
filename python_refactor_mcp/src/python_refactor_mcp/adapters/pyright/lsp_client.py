@@ -92,6 +92,11 @@ class PyrightLspClient:
             raise RefactorError("PYRIGHT_TIMEOUT", f"LSP request timed out: {method}") from exc
 
     async def notify(self, method: str, params: JsonObject) -> None:
+        if method == "textDocument/didOpen":
+            uri = (params.get("textDocument") or {}).get("uri")
+            # Skip redundant didOpen when buffer already tracked (refresh uses reopen).
+            if isinstance(uri, str) and uri in self._opened:
+                return
         await self._send({"jsonrpc": "2.0", "method": method, "params": params})
         if method == "textDocument/didOpen":
             uri = (params.get("textDocument") or {}).get("uri")
@@ -118,6 +123,7 @@ class PyrightLspClient:
         created_paths = {path.resolve() for path in created or []} - deleted_paths
         changed_paths = {path.resolve() for path in changed or []} - deleted_paths - created_paths
         watched: list[JsonObject] = []
+        touched_uris: set[str] = set()
         for path in deleted_paths:
             watched.append({"uri": path.as_uri(), "type": FILE_DELETED})
             await self._close_document(path)
@@ -126,12 +132,25 @@ class PyrightLspClient:
             *((item, FILE_CREATED) for item in created_paths),
             *((item, FILE_CHANGED) for item in changed_paths),
         ):
-            watched.append({"uri": path.as_uri(), "type": change_type})
+            uri = path.as_uri()
+            watched.append({"uri": uri, "type": change_type})
+            # Clear so a prior publish does not count as settled for this refresh.
+            self._diagnostics.pop(uri, None)
+            touched_uris.add(uri)
             await self._reopen_document(path)
         if watched:
             await self.notify("workspace/didChangeWatchedFiles", {"changes": watched})
-        if settle_timeout > 0:
-            await asyncio.sleep(settle_timeout)
+        if settle_timeout > 0 and touched_uris:
+            await self._wait_for_diagnostics(touched_uris, settle_timeout)
+
+    async def _wait_for_diagnostics(self, uris: set[str], settle_timeout: float) -> None:
+        """Wait until each URI has a publishDiagnostics (incl. empty), or timeout."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + settle_timeout
+        while loop.time() < deadline:
+            if all(uri in self._diagnostics for uri in uris):
+                return
+            await asyncio.sleep(0.02)
 
     def diagnostics(self, path: Path | None = None) -> list[JsonObject]:
         if path is None:

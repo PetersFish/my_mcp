@@ -15,3 +15,5 @@ class OperationContext:
     semantic_status: str = "uninitialized"
     verification_status: str = "uninitialized"
     warnings: list[str] = field(default_factory=list)
+    # Cached from post-refresh diagnostics loop; reused by verify "diagnostics" step.
+    cached_diagnostics_status: str | None = None

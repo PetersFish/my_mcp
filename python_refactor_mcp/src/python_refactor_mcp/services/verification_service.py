@@ -74,6 +74,8 @@ def run_verification(
     pytest_args: list[str] | None,
     dry_run: bool,
     diagnostics_runner: Any | None = None,
+    diagnostics_status: str | None = None,
+    pyright_runner: Any | None = None,
 ) -> tuple[dict[str, str], int, list[str]]:
     steps, _mode, full_pytest = resolve_verify_steps(
         verify=verify,
@@ -85,9 +87,12 @@ def run_verification(
     root = Path(project_root)
 
     if "diagnostics" in steps:
-        verification["diagnostics"] = _run_diagnostics(
-            root, changed_files, diagnostics_runner=diagnostics_runner
-        )
+        if diagnostics_status is not None:
+            verification["diagnostics"] = diagnostics_status
+        else:
+            verification["diagnostics"] = _run_diagnostics(
+                root, changed_files, diagnostics_runner=diagnostics_runner
+            )
     if "residual" in steps:
         if dry_run:
             verification["residual"] = "skipped"
@@ -97,7 +102,9 @@ def run_verification(
     if "ruff" in steps:
         verification["ruff"] = run_ruff(root, changed_files)
     if "pyright" in steps:
-        verification["pyright"] = run_pyright(root, changed_files)
+        verification["pyright"] = run_pyright(
+            root, changed_files, lsp_runner=pyright_runner
+        )
     if "pytest" in steps:
         verification["pytest"] = run_pytest(
             root,
@@ -140,10 +147,27 @@ def run_ruff(project_root: str | Path, changed_files: list[str]) -> str:
     return "ok" if result.returncode == 0 else "failed"
 
 
-def run_pyright(project_root: str | Path, changed_files: list[str]) -> str:
+def run_pyright(
+    project_root: str | Path,
+    changed_files: list[str],
+    *,
+    lsp_runner: Any | None = None,
+) -> str:
+    """Run pyright on changed files.
+
+    Prefer a warm LSP session via ``lsp_runner`` when provided; fall back to CLI.
+    """
+    root = Path(project_root)
+    if lsp_runner is not None:
+        try:
+            status = lsp_runner(root, changed_files)
+            if status in {"ok", "failed"}:
+                return status
+            # "skipped" or unexpected → fall through to CLI
+        except Exception:
+            pass
     from python_refactor_mcp.adapters.pyright.runtime_resolver import PyrightRuntimeResolver
 
-    root = Path(project_root)
     try:
         runtime = PyrightRuntimeResolver().resolve(root)
     except Exception:
@@ -275,12 +299,8 @@ def _scan_with_python(
 ) -> tuple[int, list[str]]:
     samples: list[str] = []
     count = 0
-    for path in root.rglob("*"):
-        if not path.is_file():
-            continue
+    for path in root.rglob("*.py"):
         if any(part in skip for part in path.parts):
-            continue
-        if path.suffix != ".py":
             continue
         try:
             text = path.read_text(encoding="utf-8")

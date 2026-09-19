@@ -247,6 +247,34 @@ def run_refactor(
         except Exception:
             return "skipped"
 
+    def _pyright_lsp_runner(pyr_root: Path, changed: list[str]) -> str:
+        """Reuse warm LSP diagnostics instead of spawning a second pyright CLI."""
+        try:
+            session = manager._sessions.get(pyr_root.resolve())
+            if session is None:
+                return "skipped"
+            for rel in changed:
+                if not rel.endswith(".py"):
+                    continue
+                path = pyr_root / rel
+                if not path.is_file():
+                    continue
+                diags = manager.runner.run(
+                    service.diagnostics(pyr_root, path, wait_timeout=0.0)
+                )
+                items = diags if isinstance(diags, list) else []
+                for item in items:
+                    severity = (
+                        item.get("severity")
+                        if isinstance(item, dict)
+                        else getattr(item, "severity", None)
+                    )
+                    if severity in (1, "error", "Error"):
+                        return "failed"
+            return "ok"
+        except Exception:
+            return "skipped"
+
     verification, remaining, samples = run_verification(
         request.project_root,
         changed_files=planned.changed_files,
@@ -256,6 +284,8 @@ def run_refactor(
         pytest_args=request.pytest_args,
         dry_run=request.dry_run,
         diagnostics_runner=_diagnostics_runner,
+        diagnostics_status=ctx.cached_diagnostics_status,
+        pyright_runner=_pyright_lsp_runner,
     )
     empty: list[str] = []
     if (
@@ -311,31 +341,33 @@ def _run_symbol_preflight(
 ) -> RefactorResult | None:
     assert request.module and request.symbol
     try:
-        position = manager.runner.run(
-            service.resolve_symbol(
+
+        async def _preflight() -> tuple[Any, Any, bool | None]:
+            position = await service.resolve_symbol(
                 request.project_root,
                 module=request.module,
                 symbol=request.symbol,
                 source_root=request.source_root,
             )
-        )
-        refs = manager.runner.run(service.references(Path(request.project_root), position))
-        metrics["semantic_references_before"] = int(getattr(refs, "count", 0) or 0)
-        if request.operation == "move_symbol" and request.target:
-            leaf = request.symbol.split(".")[-1]
-            exists = manager.runner.run(
-                service.module_defines_symbol(
+            refs = await service.references(Path(request.project_root), position)
+            exists: bool | None = None
+            if request.operation == "move_symbol" and request.target:
+                leaf = request.symbol.split(".")[-1]
+                exists = await service.module_defines_symbol(
                     request.project_root,
                     module=request.target,
                     symbol=leaf,
                     source_root=request.source_root,
                 )
+            return position, refs, exists
+
+        _position, refs, exists = manager.runner.run(_preflight())
+        metrics["semantic_references_before"] = int(getattr(refs, "count", 0) or 0)
+        if exists:
+            raise RefactorError(
+                "TARGET_CONFLICT",
+                f"target module already defines {request.symbol.split('.')[-1]}",
             )
-            if exists:
-                raise RefactorError(
-                    "TARGET_CONFLICT",
-                    f"target module already defines {leaf}",
-                )
         _attach_runtime_details(manager, Path(request.project_root), details)
         details["_preflight_status"] = "ok"
         return None
@@ -471,19 +503,31 @@ def _refresh_and_validate(
 
     targets = [path for path in [*created, *changed] if path.suffix == ".py" and path.is_file()]
     diagnostic_warnings: list[str] = []
-    for path in targets:
-        try:
-            # refresh() already settled; do not re-wait 2s per clean file
-            items = manager.runner.run(
-                service.diagnostics(root, path, wait_timeout=0.0)
-            )
-        except Exception:
-            continue
-        if not isinstance(items, list):
-            continue
+    verify_status = "ok"
+
+    async def _collect_diagnostics() -> list[tuple[Path, list[Any]]]:
+        collected: list[tuple[Path, list[Any]]] = []
+        for path in targets:
+            try:
+                items = await service.diagnostics(root, path, wait_timeout=0.0)
+            except Exception:
+                continue
+            if isinstance(items, list):
+                collected.append((path, items))
+        return collected
+
+    try:
+        collected = manager.runner.run(_collect_diagnostics())
+    except Exception:
+        collected = []
+
+    for path, items in collected:
         for diag in items:
             if not isinstance(diag, dict):
                 continue
+            severity = diag.get("severity")
+            if severity in (1, "error", "Error"):
+                verify_status = "failed"
             if not _is_blocking_diagnostic(diag):
                 continue
             message = str(diag.get("message", "diagnostic")).strip()
@@ -492,6 +536,8 @@ def _refresh_and_validate(
                 break
         if len(diagnostic_warnings) >= _MAX_DIAGNOSTIC_WARNINGS:
             break
+
+    ctx.cached_diagnostics_status = verify_status
 
     if not diagnostic_warnings:
         return None
@@ -505,8 +551,13 @@ def _refresh_and_validate(
 
 
 def _attach_runtime_details(manager: Any, root: Path, details: dict[str, object]) -> None:
+    session = None
     try:
-        session = manager.runner.run(manager.get_or_start(root))
+        sessions = getattr(manager, "_sessions", None)
+        if isinstance(sessions, dict):
+            session = sessions.get(root.resolve())
+        if session is None:
+            session = manager.runner.run(manager.get_or_start(root))
     except Exception:
         return
     details.setdefault("semantic_backend", "pyright")

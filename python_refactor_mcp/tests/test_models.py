@@ -84,7 +84,8 @@ def test_valid_move_module_request(tmp_path: Path) -> None:
         target="app.reporting.application.report_service",
         dry_run=True,
     )
-    assert req.verify == ["residual"]
+    assert req.verify is None
+    assert req.verification_mode is None
     assert req.dry_run is True
 
 

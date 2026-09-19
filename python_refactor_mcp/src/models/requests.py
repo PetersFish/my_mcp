@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 
-from python_refactor_mcp.models.common import Operation, SemanticMode, VerifyStep
+from python_refactor_mcp.models.common import (
+    Operation,
+    SemanticMode,
+    VerificationMode,
+    VerifyStep,
+)
 
 
 class RefactorRequest(BaseModel):
@@ -16,7 +21,8 @@ class RefactorRequest(BaseModel):
     symbol: str | None = None
     new_name: str | None = None
     dry_run: bool = False
-    verify: list[VerifyStep] = Field(default_factory=lambda: ["residual"])
+    verify: list[VerifyStep] | None = None
+    verification_mode: VerificationMode | None = None
     pytest_args: list[str] | None = None
     source_root: str | None = None
     semantic_mode: SemanticMode | None = None

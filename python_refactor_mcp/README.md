@@ -87,7 +87,7 @@ OpenCode `~/.config/opencode/opencode.json`：
 
 ## 工具
 
-两个工具：`python_refactor`（mutation）和 `inspect_symbol`（语义查询）。`project_root` 必须是**目标 Python 项目**的绝对路径（MCP 进程 cwd 不是那个项目）。
+四个工具：`python_refactor`（Rope mutation）、`inspect_symbol`（语义查询）、`apply_codemod`（注册制 LibCST）、`verify_refactor`（只跑验证）。`project_root` 必须是**目标 Python 项目**的绝对路径（MCP 进程 cwd 不是那个项目）。
 
 ### python_refactor
 
@@ -98,11 +98,13 @@ OpenCode `~/.config/opencode/opencode.json`：
 | `rename_symbol` | `module`, `symbol`, `new_name`（`symbol` 为 `Name` 或 `Class.method`） |
 | `move_symbol` | `module`, `symbol`, `target`（目标模块 dotted path） |
 
-常用可选字段：`dry_run`（默认 false）、`verify`（默认 `["residual"]`，还可加 `ruff` / `pyright` / `pytest`）、`source_root`、`pytest_args`、`semantic_mode`（`best_effort` 默认 / `required`）。
+常用可选字段：`dry_run`（默认 false）、`verify`（默认等价 `["residual"]`，还可加 `ruff` / `pyright` / `pytest`）、`verification_mode`（`fast` / `standard` / `full`）、`source_root`、`pytest_args`、`semantic_mode`（`best_effort` 默认 / `required`）。
+
+显式传入 `verify` 时以 `verify` 为准；只传 `verification_mode` 时按模式展开步骤：`fast` = LSP diagnostics + ruff；`standard` = residual + ruff + pyright + targeted pytest；`full` = 同上但 pytest 跑全量。
 
 `rename_symbol` / `move_symbol` 会先走 Pyright semantic preflight（definition + references）；Pyright 不可用时默认 `best_effort` 继续 Rope，`required` 则中止。模块操作不做重 preflight，apply 后做 typed LSP refresh + diagnostics。`verify=["pyright"]` 会经与 LSP 相同的 runtime fallback（含 MCP 自带 CLI）。
 
-结果是 compact JSON：`files_changed`、路径列表、`leftover_samples`、`leftover_replace_from` / `leftover_replace_to`、`next_action`、`empty_packages`，以及可选的 `summary` / `metrics` / `warnings` / `details` / `semantic_status`。没有 unified diff，也没有文件全文。`leftover_samples` 就是 residual 搜索结果；按 `next_action` 定点改，不要再全仓搜索。
+结果是 compact JSON：`files_changed`、路径列表、`leftover_samples`、`leftover_replace_from` / `leftover_replace_to`、`next_action`、`empty_packages`，以及可选的 `summary` / `metrics`（含 `duration_ms` / `result_chars`）/ `warnings` / `details` / `semantic_status`。没有 unified diff，也没有文件全文。`leftover_samples` 就是 residual 搜索结果；按 `next_action` 定点改，不要再全仓搜索。
 
 ### inspect_symbol
 
@@ -116,6 +118,23 @@ OpenCode `~/.config/opencode/opencode.json`：
 | `max_references` | 默认 50，超出则截断并设 `references_truncated` |
 
 返回 compact JSON：`symbol`、`definition`（`path:line:col`）、`reference_count`、截断后的 `references`、`type`。没有源码，没有 diff。
+
+### apply_codemod
+
+对注册的内置 LibCST codemod 做 preview/apply。默认 `dry_run=true`（先预览）。不接受任意 transformer 源码。
+
+| 字段 | 说明 |
+| --- | --- |
+| `codemod` | `replace_qualified_name` / `replace_call_keyword` / `replace_decorator` |
+| `params` | 各 codemod 参数（如 `old`/`new`，或 `function`/`old`/`new`） |
+| `paths` | 相对 `project_root` 的扫描路径，默认 `["."]` |
+| `dry_run` | 默认 true；false 时 hash 校验后原子写盘并 LSP refresh |
+
+返回 compact：`files_scanned` / `files_matched` / `files_changed` / `transform_count` / `metrics`；无 diff/源码。parse 失败或并发修改会整批中止（零半写）。
+
+### verify_refactor
+
+只跑验证、不改文件。`verification_mode` 默认 `standard`；也可显式传 `verify` 步骤列表（与 `python_refactor` 相同锁定规则）。
 
 调试（不经 MCP）：
 
@@ -138,6 +157,8 @@ python -m python_refactor_mcp.cli \
 For structural Python refactoring, always prefer the
 `python_refactor` tool over manual multi-file editing.
 Use `inspect_symbol` for definition/references/type instead of grep/read loops.
+Use `apply_codemod` for registered LibCST rewrites (preview-first).
+Use `verify_refactor` to re-check without re-running Rope.
 
 Use `python_refactor` for:
 
@@ -173,10 +194,13 @@ Direct edits are allowed only for:
 - 自动改 `importlib.import_module` / `getattr` 等动态字符串
 - 自动改 JSON / YAML / Markdown / shell / 部署配置
 - extract method / change signature / inline
-- LibCST、工具内 LLM、自动 `git reset`
-- 默认跑全量 pytest（需 `verify=["pytest"]` 才跑）
+- 工具内 LLM、自动 `git reset`
+- 任意上传的 LibCST transformer（只允许注册的 builtin codemod）
+- 默认跑全量 pytest（`verification_mode=full` 或 `verify=["pytest"]` + 全量参数才跑）
 
 Rope 可能会为了解析路径而补空的 `__init__.py`，从而把 namespace package 变成 regular package。失败时工具不会 `git reset`；回滚交给 Git / 用户。
+
+V3 metrics 在 V1 字段之外附加 `duration_ms` / `result_chars` 等；compact 结果仍不返回源码或 diff。
 
 ## 开发
 

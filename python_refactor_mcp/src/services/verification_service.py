@@ -3,8 +3,13 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
-from python_refactor_mcp.models.common import VerifyStep
+from python_refactor_mcp.models.common import (
+    VERIFICATION_MODE_STEPS,
+    VerificationMode,
+    VerifyStep,
+)
 from python_refactor_mcp.utils.summaries import LEFTOVER_SAMPLES_LIMIT
 
 SKIP_DIRS = {
@@ -19,6 +24,26 @@ SKIP_DIRS = {
 }
 
 MAX_PYTEST_FILES = 10
+
+
+def resolve_verify_steps(
+    *,
+    verify: list[VerifyStep] | None,
+    verification_mode: VerificationMode | None,
+) -> tuple[list[VerifyStep], VerificationMode | None, bool]:
+    """Resolve verification steps.
+
+    Lock: explicit ``verify`` wins when provided; otherwise ``verification_mode``
+    expands to steps; otherwise default ``[\"residual\"]`` (V1 compat).
+    Returns (steps, mode_used, full_pytest).
+    """
+    if verify is not None:
+        mode = verification_mode
+        full_pytest = verification_mode == "full"
+        return list(verify), mode, full_pytest
+    if verification_mode is not None:
+        return list(VERIFICATION_MODE_STEPS[verification_mode]), verification_mode, verification_mode == "full"
+    return ["residual"], None, False
 
 
 def scan_residual(
@@ -43,28 +68,57 @@ def run_verification(
     *,
     changed_files: list[str],
     needles: list[str],
-    verify: list[VerifyStep],
+    verify: list[VerifyStep] | None = None,
+    verification_mode: VerificationMode | None = None,
     pytest_args: list[str] | None,
     dry_run: bool,
+    diagnostics_runner: Any | None = None,
 ) -> tuple[dict[str, str], int, list[str]]:
+    steps, _mode, full_pytest = resolve_verify_steps(
+        verify=verify,
+        verification_mode=verification_mode,
+    )
     verification: dict[str, str] = {}
     remaining = 0
     samples: list[str] = []
     root = Path(project_root)
 
-    if "residual" in verify:
+    if "diagnostics" in steps:
+        verification["diagnostics"] = _run_diagnostics(
+            root, changed_files, diagnostics_runner=diagnostics_runner
+        )
+    if "residual" in steps:
         if dry_run:
             verification["residual"] = "skipped"
         else:
             remaining, samples = scan_residual(root, needles)
             verification["residual"] = "ok" if remaining == 0 else "failed"
-    if "ruff" in verify:
+    if "ruff" in steps:
         verification["ruff"] = run_ruff(root, changed_files)
-    if "pyright" in verify:
+    if "pyright" in steps:
         verification["pyright"] = run_pyright(root, changed_files)
-    if "pytest" in verify:
-        verification["pytest"] = run_pytest(root, changed_files, pytest_args=pytest_args)
+    if "pytest" in steps:
+        verification["pytest"] = run_pytest(
+            root,
+            changed_files,
+            pytest_args=pytest_args,
+            full_suite=full_pytest,
+        )
     return verification, remaining, samples
+
+
+def _run_diagnostics(
+    root: Path,
+    changed_files: list[str],
+    *,
+    diagnostics_runner: Any | None,
+) -> str:
+    if diagnostics_runner is None:
+        return "skipped"
+    try:
+        return diagnostics_runner(root, changed_files)
+    except Exception:
+        return "skipped"
 
 
 def run_ruff(project_root: str | Path, changed_files: list[str]) -> str:
@@ -113,12 +167,16 @@ def run_pytest(
     project_root: str | Path,
     changed_files: list[str],
     pytest_args: list[str] | None,
+    *,
+    full_suite: bool = False,
 ) -> str:
     root = Path(project_root)
     if not shutil.which("pytest"):
         return "skipped"
     if pytest_args:
         args = list(pytest_args)
+    elif full_suite:
+        args = []
     else:
         test_files = [
             path

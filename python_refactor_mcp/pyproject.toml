@@ -9,6 +9,7 @@ dependencies = [
     "pydantic>=2.10",
     "rope>=1.13",
     "pyright[nodejs]>=1.1.400",
+    "libcst>=1.5",
 ]
 
 [project.optional-dependencies]

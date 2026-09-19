@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -55,6 +56,7 @@ def run_refactor(
     *,
     semantic_service: _SemanticServiceLike | None = None,
 ) -> RefactorResult:
+    started = time.perf_counter()
     dirty = snapshot_porcelain(request.project_root)
     git_dirty_before = bool(dirty)
     target = _result_target(request)
@@ -85,6 +87,17 @@ def run_refactor(
     details: dict[str, object] = {}
     semantic_status: str | None = None
 
+    def _finalize(result: RefactorResult) -> RefactorResult:
+        duration_ms = int((time.perf_counter() - started) * 1000)
+        merged = dict(result.metrics)
+        merged.setdefault("duration_ms", duration_ms)
+        payload = result.model_dump_json()
+        merged["result_chars"] = len(payload)
+        result.metrics = merged
+        # Recompute after embedding result_chars would recurse; approximate once.
+        result.metrics["result_chars"] = len(result.model_dump_json())
+        return result
+
     if request.operation in _SYMBOL_OPS:
         preflight = _run_symbol_preflight(
             request,
@@ -95,7 +108,7 @@ def run_refactor(
             details=details,
         )
         if preflight is not None:
-            return preflight
+            return _finalize(preflight)
         semantic_status = str(details.pop("_preflight_status", "ok"))
         ctx.semantic_status = semantic_status
     else:
@@ -104,59 +117,65 @@ def run_refactor(
     try:
         planned = run_rope_refactor(request)
     except RopeConflictError as exc:
-        return compact_result(
-            operation=request.operation,
-            dry_run=request.dry_run,
-            source=_result_source(request),
-            target=target,
-            status="conflict",
-            leftover_replace_from=replace_from,
-            leftover_replace_to=replace_to,
-            conflicts=exc.conflicts,
-            git_dirty_before=git_dirty_before,
-            error="; ".join(exc.conflicts),
-            metrics=metrics,
-            warnings=warnings,
-            details=details,
-            semantic_status=semantic_status,
+        return _finalize(
+            compact_result(
+                operation=request.operation,
+                dry_run=request.dry_run,
+                source=_result_source(request),
+                target=target,
+                status="conflict",
+                leftover_replace_from=replace_from,
+                leftover_replace_to=replace_to,
+                conflicts=exc.conflicts,
+                git_dirty_before=git_dirty_before,
+                error="; ".join(exc.conflicts),
+                metrics=metrics,
+                warnings=warnings,
+                details=details,
+                semantic_status=semantic_status,
+            )
         )
     except RopeAdapterError as exc:
         after = snapshot_porcelain(request.project_root)
         changed = _new_porcelain_paths(dirty, after)
-        return compact_result(
-            operation=request.operation,
-            dry_run=request.dry_run,
-            source=_result_source(request),
-            target=target,
-            status="error",
-            changed_files=changed,
-            leftover_replace_from=replace_from,
-            leftover_replace_to=replace_to,
-            git_dirty_before=git_dirty_before,
-            error=_short_error(str(exc)),
-            metrics=metrics,
-            warnings=warnings,
-            details=details,
-            semantic_status=semantic_status,
+        return _finalize(
+            compact_result(
+                operation=request.operation,
+                dry_run=request.dry_run,
+                source=_result_source(request),
+                target=target,
+                status="error",
+                changed_files=changed,
+                leftover_replace_from=replace_from,
+                leftover_replace_to=replace_to,
+                git_dirty_before=git_dirty_before,
+                error=_short_error(str(exc)),
+                metrics=metrics,
+                warnings=warnings,
+                details=details,
+                semantic_status=semantic_status,
+            )
         )
     except Exception as exc:  # pragma: no cover - unexpected engine failure
         after = snapshot_porcelain(request.project_root)
         changed = _new_porcelain_paths(dirty, after)
-        return compact_result(
-            operation=request.operation,
-            dry_run=request.dry_run,
-            source=_result_source(request),
-            target=target,
-            status="error",
-            changed_files=changed,
-            leftover_replace_from=replace_from,
-            leftover_replace_to=replace_to,
-            git_dirty_before=git_dirty_before,
-            error=_short_error(str(exc)),
-            metrics=metrics,
-            warnings=warnings,
-            details=details,
-            semantic_status=semantic_status,
+        return _finalize(
+            compact_result(
+                operation=request.operation,
+                dry_run=request.dry_run,
+                source=_result_source(request),
+                target=target,
+                status="error",
+                changed_files=changed,
+                leftover_replace_from=replace_from,
+                leftover_replace_to=replace_to,
+                git_dirty_before=git_dirty_before,
+                error=_short_error(str(exc)),
+                metrics=metrics,
+                warnings=warnings,
+                details=details,
+                semantic_status=semantic_status,
+            )
         )
 
     ctx.changed_files = [root / path for path in planned.changed_files]
@@ -178,24 +197,26 @@ def run_refactor(
             ctx=ctx,
         )
         if refresh_error is not None:
-            return compact_result(
-                operation=request.operation,
-                dry_run=request.dry_run,
-                source=_result_source(request),
-                target=target,
-                status="error",
-                changed_files=planned.changed_files,
-                created_files=planned.created_files,
-                deleted_files=planned.deleted_files,
-                leftover_replace_from=replace_from,
-                leftover_replace_to=replace_to,
-                git_dirty_before=git_dirty_before,
-                error=refresh_error.message,
-                metrics=metrics,
-                warnings=warnings,
-                details={**details, "code": refresh_error.code},
-                semantic_status=ctx.semantic_status if ctx.semantic_status != "uninitialized" else semantic_status,
-                summary=_summary(request),
+            return _finalize(
+                compact_result(
+                    operation=request.operation,
+                    dry_run=request.dry_run,
+                    source=_result_source(request),
+                    target=target,
+                    status="error",
+                    changed_files=planned.changed_files,
+                    created_files=planned.created_files,
+                    deleted_files=planned.deleted_files,
+                    leftover_replace_from=replace_from,
+                    leftover_replace_to=replace_to,
+                    git_dirty_before=git_dirty_before,
+                    error=refresh_error.message,
+                    metrics=metrics,
+                    warnings=warnings,
+                    details={**details, "code": refresh_error.code},
+                    semantic_status=ctx.semantic_status if ctx.semantic_status != "uninitialized" else semantic_status,
+                    summary=_summary(request),
+                )
             )
         if ctx.semantic_status not in {"uninitialized", "unavailable"}:
             semantic_status = ctx.semantic_status
@@ -204,13 +225,33 @@ def run_refactor(
         elif semantic_status is None and details.get("semantic_backend"):
             semantic_status = "ok"
 
+    def _diagnostics_runner(diag_root: Path, changed: list[str]) -> str:
+        try:
+            for rel in changed:
+                if not rel.endswith(".py"):
+                    continue
+                path = diag_root / rel
+                if not path.is_file():
+                    continue
+                diags = manager.runner.run(service.diagnostics(diag_root, path))
+                items = diags if isinstance(diags, list) else []
+                for item in items:
+                    severity = item.get("severity") if isinstance(item, dict) else getattr(item, "severity", None)
+                    if severity in (1, "error", "Error"):
+                        return "failed"
+            return "ok"
+        except Exception:
+            return "skipped"
+
     verification, remaining, samples = run_verification(
         request.project_root,
         changed_files=planned.changed_files,
         needles=planned.old_needles,
         verify=request.verify,
+        verification_mode=request.verification_mode,
         pytest_args=request.pytest_args,
         dry_run=request.dry_run,
+        diagnostics_runner=_diagnostics_runner,
     )
     empty: list[str] = []
     if (
@@ -223,27 +264,29 @@ def run_refactor(
             request.source,
             source_root,
         )
-    return compact_result(
-        operation=request.operation,
-        dry_run=request.dry_run,
-        source=_result_source(request),
-        target=target,
-        status="success",
-        changed_files=planned.changed_files,
-        created_files=planned.created_files,
-        deleted_files=planned.deleted_files,
-        leftover_samples=samples,
-        remaining_old_references=remaining,
-        leftover_replace_from=replace_from,
-        leftover_replace_to=replace_to,
-        empty_packages=empty,
-        git_dirty_before=git_dirty_before,
-        verification=verification,
-        summary=_summary(request),
-        metrics=metrics,
-        warnings=warnings,
-        details=details,
-        semantic_status=semantic_status,
+    return _finalize(
+        compact_result(
+            operation=request.operation,
+            dry_run=request.dry_run,
+            source=_result_source(request),
+            target=target,
+            status="success",
+            changed_files=planned.changed_files,
+            created_files=planned.created_files,
+            deleted_files=planned.deleted_files,
+            leftover_samples=samples,
+            remaining_old_references=remaining,
+            leftover_replace_from=replace_from,
+            leftover_replace_to=replace_to,
+            empty_packages=empty,
+            git_dirty_before=git_dirty_before,
+            verification=verification,
+            summary=_summary(request),
+            metrics=metrics,
+            warnings=warnings,
+            details=details,
+            semantic_status=semantic_status,
+        )
     )
 
 

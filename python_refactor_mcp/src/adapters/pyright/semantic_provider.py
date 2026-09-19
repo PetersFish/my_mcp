@@ -4,13 +4,12 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
 
 from python_refactor_mcp.adapters.pyright.lsp_client import PyrightLspClient
 from python_refactor_mcp.adapters.pyright.process_manager import PyrightProcessManager
 from python_refactor_mcp.models.common import SourcePosition
 from python_refactor_mcp.models.errors import RefactorError
-from python_refactor_mcp.utils.paths import ensure_inside_project, resolve_project_root
+from python_refactor_mcp.utils.paths import ensure_inside_project, resolve_project_root, uri_to_path
 
 
 @dataclass(frozen=True)
@@ -194,17 +193,12 @@ def _as_locations(result: object) -> list[SourcePosition]:
             continue
         locations.append(
             SourcePosition(
-                path=_uri_to_path(str(target)),
+                path=uri_to_path(str(target)),
                 line=int(start.get("line", 0)),
                 character=int(start.get("character", 0)),
             )
         )
     return locations
-
-
-def _uri_to_path(uri: str) -> Path:
-    parsed = urlparse(uri)
-    return Path(unquote(parsed.path))
 
 
 def _hover_text(result: object) -> str:

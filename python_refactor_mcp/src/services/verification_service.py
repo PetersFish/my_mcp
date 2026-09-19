@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -214,9 +215,7 @@ def _scan_with_rg(
     result = subprocess.run(
         [
             rg,
-            "--line-number",
-            "--no-heading",
-            "-n",
+            "--json",
             "--glob",
             "*.py",
             pattern,
@@ -231,12 +230,24 @@ def _scan_with_rg(
         return _scan_with_python(root, needles, skip)
     samples: list[str] = []
     count = 0
-    for line in result.stdout.splitlines():
-        if not line.strip():
-            continue
-        count += 1
-        if len(samples) < LEFTOVER_SAMPLES_LIMIT:
-            samples.append(_format_match_line(line))
+    try:
+        for line in result.stdout.splitlines():
+            if not line.strip():
+                continue
+            event = json.loads(line)
+            if event.get("type") != "match":
+                continue
+            data = event.get("data") or {}
+            path_info = data.get("path") or {}
+            raw_path = str(path_info.get("text") or "")
+            lineno = int(data.get("line_number") or 0)
+            lines_info = data.get("lines") or {}
+            snippet = str(lines_info.get("text") or "").strip()[:120]
+            count += 1
+            if len(samples) < LEFTOVER_SAMPLES_LIMIT:
+                samples.append(_format_rg_json_match(root, raw_path, lineno, snippet))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return _scan_with_python(root, needles, skip)
     return count, samples
 
 
@@ -244,12 +255,17 @@ def _escape_rg(needle: str) -> str:
     return needle.replace("\\", "\\\\").replace(".", r"\.")
 
 
-def _format_match_line(line: str) -> str:
-    parts = line.split(":", 2)
-    if len(parts) < 3:
-        return line[:200]
-    path, lineno, snippet = parts
-    return f"{path}:{lineno}:{snippet.strip()[:120]}"
+def _format_rg_json_match(root: Path, raw_path: str, lineno: int, snippet: str) -> str:
+    path = Path(raw_path)
+    try:
+        if not path.is_absolute():
+            path = (root / path).resolve()
+        else:
+            path = path.resolve()
+        display = path.relative_to(root.resolve()).as_posix()
+    except (OSError, ValueError):
+        display = raw_path.replace("\\", "/")
+    return f"{display}:{lineno}:{snippet}"
 
 
 def _scan_with_python(

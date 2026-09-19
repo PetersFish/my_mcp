@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -7,6 +8,14 @@ import pytest
 from python_refactor_mcp.adapters.pyright.runtime import PyrightRuntime
 from python_refactor_mcp.adapters.pyright.runtime_resolver import PyrightRuntimeResolver
 from python_refactor_mcp.models.errors import RefactorError
+
+
+def _venv_ls_cli(project: Path) -> tuple[Path, Path]:
+    if os.name == "nt":
+        base = project / ".venv" / "Scripts"
+        return base / "pyright-langserver.exe", base / "pyright.exe"
+    base = project / ".venv" / "bin"
+    return base / "pyright-langserver", base / "pyright"
 
 
 def _touch_executable(path: Path) -> Path:
@@ -32,7 +41,8 @@ cli = "{cli}"
     )
     ls = _touch_executable(tmp_path / "explicit" / "pyright-langserver")
     cli = _touch_executable(tmp_path / "explicit" / "pyright")
-    _touch_executable(project / ".venv" / "bin" / "pyright-langserver")
+    venv_ls, _venv_cli = _venv_ls_cli(project)
+    _touch_executable(venv_ls)
     monkeypatch.setattr(
         "python_refactor_mcp.adapters.pyright.runtime_resolver.shutil.which",
         lambda name: str(tmp_path / "mcp" / name),
@@ -46,8 +56,9 @@ cli = "{cli}"
 
 def test_project_venv_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = tmp_path / "proj"
-    ls = _touch_executable(project / ".venv" / "bin" / "pyright-langserver")
-    cli = _touch_executable(project / ".venv" / "bin" / "pyright")
+    ls_path, cli_path = _venv_ls_cli(project)
+    ls = _touch_executable(ls_path)
+    cli = _touch_executable(cli_path)
     monkeypatch.setattr(
         "python_refactor_mcp.adapters.pyright.runtime_resolver.shutil.which",
         lambda name: None,
@@ -60,7 +71,27 @@ def test_project_venv_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
 
 def test_project_node_modules_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = tmp_path / "proj"
-    ls = _touch_executable(project / "node_modules" / ".bin" / "pyright-langserver")
+    if os.name == "nt":
+        ls = _touch_executable(project / "node_modules" / ".bin" / "pyright-langserver.cmd")
+    else:
+        ls = _touch_executable(project / "node_modules" / ".bin" / "pyright-langserver")
+    monkeypatch.setattr(
+        "python_refactor_mcp.adapters.pyright.runtime_resolver.shutil.which",
+        lambda name: None,
+    )
+    runtime = PyrightRuntimeResolver().resolve(project)
+    assert runtime.source == "project"
+    assert runtime.language_server == ls.resolve()
+
+
+def test_project_prefers_venv_exe_over_node_cmd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = tmp_path / "proj"
+    ls_path, cli_path = _venv_ls_cli(project)
+    ls = _touch_executable(ls_path)
+    _touch_executable(cli_path)
+    _touch_executable(project / "node_modules" / ".bin" / "pyright-langserver.cmd")
     monkeypatch.setattr(
         "python_refactor_mcp.adapters.pyright.runtime_resolver.shutil.which",
         lambda name: None,

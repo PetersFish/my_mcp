@@ -49,7 +49,7 @@ python -m python_refactor_mcp uninstall --purge   # 同时删除 skill 目录和
 
 手工兜底：
 
-Cursor `~/.cursor/mcp.json` 与 Claude Code `~/.claude.json`（user scope，只合并 `mcpServers`）：
+**macOS / Linux** — Cursor `~/.cursor/mcp.json` 与 Claude Code `~/.claude.json`（user scope，只合并 `mcpServers`）：
 
 ```json
 {
@@ -58,6 +58,20 @@ Cursor `~/.cursor/mcp.json` 与 Claude Code `~/.claude.json`（user scope，只�
       "command": "/absolute/path/to/python_refactor_mcp/.venv/bin/python",
       "args": ["-m", "python_refactor_mcp"],
       "cwd": "/absolute/path/to/python_refactor_mcp"
+    }
+  }
+}
+```
+
+**Windows 10** — 使用 venv 的 `Scripts\python.exe`（正斜杠或反斜杠均可）：
+
+```json
+{
+  "mcpServers": {
+    "python-refactor": {
+      "command": "C:/absolute/path/to/python_refactor_mcp/.venv/Scripts/python.exe",
+      "args": ["-m", "python_refactor_mcp"],
+      "cwd": "C:/absolute/path/to/python_refactor_mcp"
     }
   }
 }
@@ -83,7 +97,11 @@ OpenCode `~/.config/opencode/opencode.json`：
 }
 ```
 
+Windows 上把上面的 `command` 换成 `.venv\\Scripts\\python.exe` 的绝对路径即可。
+
 若你的 OpenCode 仍是旧格式，把 `python-refactor` 直接写在 `mcp` 下，而不是 `mcp.servers`。
+
+**Windows 安装注意：** 仓库里的 `python_refactor_mcp → src` 是给 macOS/Linux 可编辑开发用的符号链接。Windows 若 Git 未启用 symlink，请用官方路径安装：`uv sync` / `uv sync --extra dev` 后走 hatch editable，再 `python -m python_refactor_mcp setup`；不要依赖把 symlink checkout 成文本文件。`project_root` 在两端都必须是目标项目的绝对路径。
 
 ## 工具
 

@@ -22,17 +22,13 @@ def _agent_dbg(hypothesis_id: str, location: str, message: str, data: dict[str, 
         "timestamp": int(time.time() * 1000),
     }
     line = json.dumps(payload, ensure_ascii=False)
-    for path_str in (
-        "/Users/yuping/Documents/workspace/my_mcp/.cursor/debug-614904.log",
-        str(Path(__file__).resolve().parent.parent / ".cursor" / "debug-614904.log"),
-    ):
-        try:
-            path = Path(path_str)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write(line + "\n")
-        except Exception:
-            pass
+    path = Path(__file__).resolve().parent.parent / ".cursor" / "debug-614904.log"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except Exception:
+        pass
     try:
         print(f"[debug-614904] {line}", file=sys.stderr)
     except Exception:

@@ -75,6 +75,6 @@ Direct edits remain allowed for business logic and for leftovers the tool cannot
 - Optional `verification_mode`: `fast` / `standard` / `full` (explicit `verify` list wins when provided)
 - `apply_codemod`: `codemod` + `params` + optional `paths` (default `dry_run=true`)
 
-Always pass `project_root` as an absolute directory. The result is compact JSON: file counts, leftover samples, and `next_action`; never diffs.
+Always pass `project_root` as an absolute directory (macOS and Windows). The result is compact JSON: file counts, leftover samples, and `next_action`; never diffs.
 
 `inspect_symbol` uses 1-based `line`/`character` and returns a truncated reference list plus `reference_count`. Do not grep to confirm.

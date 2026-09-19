@@ -8,6 +8,7 @@ from typing import Any
 
 from python_refactor_mcp.adapters.pyright.runtime import PyrightRuntime
 from python_refactor_mcp.models.errors import RefactorError
+from python_refactor_mcp.utils.process import language_server_argv
 
 JsonObject = dict[str, Any]
 
@@ -34,9 +35,9 @@ class PyrightLspClient:
         python_path: Path | None,
     ) -> None:
         root = project_root.resolve()
+        argv = language_server_argv(runtime.language_server)
         self._process = await asyncio.create_subprocess_exec(
-            str(runtime.language_server),
-            "--stdio",
+            *argv,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

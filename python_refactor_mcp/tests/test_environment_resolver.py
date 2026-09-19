@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -9,6 +10,12 @@ from python_refactor_mcp.adapters.pyright.environment_resolver import (
     PythonEnvironment,
     PythonEnvironmentResolver,
 )
+
+
+def _venv_python_path(project: Path) -> Path:
+    if os.name == "nt":
+        return project / ".venv" / "Scripts" / "python.exe"
+    return project / ".venv" / "bin" / "python"
 
 
 def _touch_executable(path: Path) -> Path:
@@ -29,23 +36,23 @@ executable = "{python}"
 """,
         encoding="utf-8",
     )
-    _touch_executable(project / ".venv" / "bin" / "python")
+    _touch_executable(_venv_python_path(project))
     env = PythonEnvironmentResolver().resolve(project)
     assert isinstance(env, PythonEnvironment)
     assert env.executable == python.resolve()
     assert env.source == "explicit"
 
 
-def test_project_venv_unix(tmp_path: Path) -> None:
+def test_project_venv(tmp_path: Path) -> None:
     project = tmp_path / "proj"
-    python = _touch_executable(project / ".venv" / "bin" / "python")
+    python = _touch_executable(_venv_python_path(project))
     env = PythonEnvironmentResolver().resolve(project)
     assert env.executable == python.resolve()
     assert env.source == "project_venv"
     assert env.executable != Path(sys.executable).resolve()
 
 
-def test_windows_venv_python(tmp_path: Path) -> None:
+def test_windows_venv_python_layout(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     python = _touch_executable(project / ".venv" / "Scripts" / "python.exe")
     env = PythonEnvironmentResolver().resolve(project)
@@ -55,7 +62,7 @@ def test_windows_venv_python(tmp_path: Path) -> None:
 
 def test_does_not_use_mcp_sys_executable_when_venv_exists(tmp_path: Path) -> None:
     project = tmp_path / "proj"
-    python = _touch_executable(project / ".venv" / "bin" / "python")
+    python = _touch_executable(_venv_python_path(project))
     env = PythonEnvironmentResolver().resolve(project)
     assert env.executable == python.resolve()
     assert Path(sys.executable).resolve() != python.resolve()
@@ -65,7 +72,12 @@ def test_skips_mcp_prefix_as_last_resort(tmp_path: Path, monkeypatch: pytest.Mon
     project = tmp_path / "proj"
     project.mkdir()
     monkeypatch.setattr(sys, "prefix", str(tmp_path / "mcp-venv"))
-    monkeypatch.setattr(sys, "executable", str(tmp_path / "mcp-venv" / "bin" / "python"))
+    if os.name == "nt":
+        monkeypatch.setattr(
+            sys, "executable", str(tmp_path / "mcp-venv" / "Scripts" / "python.exe")
+        )
+    else:
+        monkeypatch.setattr(sys, "executable", str(tmp_path / "mcp-venv" / "bin" / "python"))
     env = PythonEnvironmentResolver().resolve(project)
     assert env.executable is None
     assert env.source == "unresolved"

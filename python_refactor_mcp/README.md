@@ -8,14 +8,16 @@ V1 支持 4 个 operation：`move_module`、`rename_module`、`rename_symbol`、
 
 前置：Python 3.11+ 与 [uv](https://docs.astral.sh/uv/)。
 
-**Agent 在用户电脑上安装**（非交互，一条命令即可）：
+**Agent 在用户电脑上安装**（先 sync 再 setup）：
 
 ```bash
 cd <path-to>/python_refactor_mcp
-python -m python_refactor_mcp setup --client all --yes
-python -m python_refactor_mcp doctor
+uv sync
+uv run python -m python_refactor_mcp setup --client all --yes
+uv run python -m python_refactor_mcp doctor
 ```
 
+Windows 等价：`uv sync` 后用 `.\.venv\Scripts\python.exe -m python_refactor_mcp setup --client all --yes`。
 `setup --yes` 会改这些**用户级**文件（不改任意 git 仓库里的项目 `CLAUDE.md`）：
 
 - MCP：`~/.cursor/mcp.json`、`~/.claude.json`（`mcpServers`）、`~/.config/opencode/opencode.json`
@@ -27,22 +29,22 @@ python -m python_refactor_mcp doctor
 只装某一端：
 
 ```bash
-python -m python_refactor_mcp setup --client cursor --yes
-python -m python_refactor_mcp setup --client claude --yes
-python -m python_refactor_mcp setup --client opencode --yes
+uv run python -m python_refactor_mcp setup --client cursor --yes
+uv run python -m python_refactor_mcp setup --client claude --yes
+uv run python -m python_refactor_mcp setup --client opencode --yes
 ```
 
 验证：
 
 ```bash
-python -m python_refactor_mcp doctor
+uv run python -m python_refactor_mcp doctor
 ```
 
 卸载：
 
 ```bash
-python -m python_refactor_mcp uninstall
-python -m python_refactor_mcp uninstall --purge   # 同时删除 skill 目录和指令标记块
+uv run python -m python_refactor_mcp uninstall
+uv run python -m python_refactor_mcp uninstall --purge   # 同时删除 skill 目录和指令标记块
 ```
 
 无 API key。客户端配置里不要写密钥。
@@ -98,7 +100,7 @@ OpenCode `~/.config/opencode/opencode.json`（`mcp.<name>` 直挂，不要写 `m
 
 Windows 上把上面的 `command` 换成 `.venv\\Scripts\\python.exe` 的绝对路径即可。
 
-**Windows 安装注意：** 仓库里的 `python_refactor_mcp → src` 是给 macOS/Linux 可编辑开发用的符号链接。Windows 若 Git 未启用 symlink，请用官方路径安装：`uv sync` / `uv sync --extra dev` 后走 hatch editable，再 `python -m python_refactor_mcp setup`；不要依赖把 symlink checkout 成文本文件。`project_root` 在两端都必须是目标项目的绝对路径。
+**Windows：** 包代码在 `src/python_refactor_mcp/`（标准 src 布局），无需 Git symlink / Developer Mode。先 `uv sync`，再用 `.venv\Scripts\python.exe -m python_refactor_mcp ...`。`project_root` 在两端都必须是目标项目的绝对路径。
 
 ## 工具
 

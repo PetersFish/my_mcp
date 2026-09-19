@@ -35,8 +35,18 @@ class SemanticService:
     async def hover(self, project_root: Path, position: SourcePosition) -> HoverInfo:
         return await self._provider.hover(project_root, position)
 
-    async def diagnostics(self, project_root: Path, path: Path | None = None) -> object:
-        return await self._provider.diagnostics(project_root, path)
+    async def diagnostics(
+        self,
+        project_root: Path,
+        path: Path | None = None,
+        *,
+        wait_timeout: float = 2.0,
+    ) -> object:
+        return await self._provider.diagnostics(
+            project_root,
+            path,
+            wait_timeout=wait_timeout,
+        )
 
     async def resolve_symbol(
         self,

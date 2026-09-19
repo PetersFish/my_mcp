@@ -173,7 +173,9 @@ def verify_refactor(
                 path = diag_root / rel
                 if not path.is_file():
                     continue
-                diags = manager.runner.run(service.diagnostics(diag_root, path))
+                diags = manager.runner.run(
+                    service.diagnostics(diag_root, path, wait_timeout=0.4)
+                )
                 items = diags if isinstance(diags, list) else []
                 for item in items:
                     severity = (

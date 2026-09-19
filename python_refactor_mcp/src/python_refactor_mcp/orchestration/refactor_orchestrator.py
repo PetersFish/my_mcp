@@ -233,7 +233,11 @@ def run_refactor(
                 path = diag_root / rel
                 if not path.is_file():
                     continue
-                diags = manager.runner.run(service.diagnostics(diag_root, path))
+                # Prefer cached publishDiagnostics; avoid 2s empty-wait per file.
+                wait = 0.0 if not request.dry_run else 0.4
+                diags = manager.runner.run(
+                    service.diagnostics(diag_root, path, wait_timeout=wait)
+                )
                 items = diags if isinstance(diags, list) else []
                 for item in items:
                     severity = item.get("severity") if isinstance(item, dict) else getattr(item, "severity", None)
@@ -469,7 +473,10 @@ def _refresh_and_validate(
     diagnostic_warnings: list[str] = []
     for path in targets:
         try:
-            items = manager.runner.run(service.diagnostics(root, path))
+            # refresh() already settled; do not re-wait 2s per clean file
+            items = manager.runner.run(
+                service.diagnostics(root, path, wait_timeout=0.0)
+            )
         except Exception:
             continue
         if not isinstance(items, list):

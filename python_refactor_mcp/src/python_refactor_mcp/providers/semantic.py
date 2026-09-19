@@ -17,7 +17,13 @@ class SemanticProvider(Protocol):
 
     async def document_symbols(self, project_root: Path, path: Path) -> object: ...
 
-    async def diagnostics(self, project_root: Path, path: Path | None = None) -> object: ...
+    async def diagnostics(
+        self,
+        project_root: Path,
+        path: Path | None = None,
+        *,
+        wait_timeout: float = 2.0,
+    ) -> object: ...
 
     async def refresh(
         self,

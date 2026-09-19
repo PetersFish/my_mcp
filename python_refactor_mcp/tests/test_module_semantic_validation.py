@@ -39,7 +39,7 @@ class SpySemanticService:
 
 
 class WarningDiagnosticsService(SpySemanticService):
-    async def diagnostics(self, project_root, path=None):
+    async def diagnostics(self, project_root, path=None, *, wait_timeout: float = 2.0):
         self.diagnostics_calls += 1
         return [
             {

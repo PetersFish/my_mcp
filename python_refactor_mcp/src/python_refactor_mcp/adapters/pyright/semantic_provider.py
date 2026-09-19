@@ -92,10 +92,21 @@ class PyrightSemanticProvider:
         )
         return result or []
 
-    async def diagnostics(self, project_root: Path, path: Path | None = None) -> list[dict[str, Any]]:
-        client, _root, target = await self._prepare(project_root, path)
+    async def diagnostics(
+        self,
+        project_root: Path,
+        path: Path | None = None,
+        *,
+        wait_timeout: float = 2.0,
+    ) -> list[dict[str, Any]]:
+        # Diagnostics only need the target buffer; avoid workspace didOpen flood here.
+        client, _root, target = await self._prepare(
+            project_root, path, open_workspace=False
+        )
         if path is not None:
-            deadline = asyncio.get_running_loop().time() + 2.0
+            if wait_timeout <= 0:
+                return client.diagnostics(target)
+            deadline = asyncio.get_running_loop().time() + wait_timeout
             while asyncio.get_running_loop().time() < deadline:
                 items = client.diagnostics(target)
                 if items:
@@ -124,6 +135,8 @@ class PyrightSemanticProvider:
         self,
         project_root: Path,
         path: Path | None,
+        *,
+        open_workspace: bool = True,
     ) -> tuple[PyrightLspClient, Path, Path]:
         root = resolve_project_root(project_root)
         session = await self._manager.get_or_start(root)
@@ -143,7 +156,7 @@ class PyrightSemanticProvider:
                     }
                 },
             )
-        if not session.extra.get("workspace_opened"):
+        if open_workspace and not session.extra.get("workspace_opened"):
             await _open_workspace_python_files(client, root)
             session.extra["workspace_opened"] = True
         return client, root, target

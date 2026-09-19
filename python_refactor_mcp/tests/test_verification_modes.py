@@ -82,6 +82,22 @@ def test_verify_refactor_tool_present_and_runs(mini_pkg: Path) -> None:
     assert "diagnostics" in payload["verification"] or "ruff" in payload["verification"]
 
 
+def test_verify_refactor_default_is_residual_only(mini_pkg: Path) -> None:
+    from python_refactor_mcp import server as server_mod
+
+    payload = server_mod.verify_refactor(
+        project_root=str(mini_pkg),
+        changed_files=["app/services/report.py"],
+        needles=["nonexistent_needle_xyz"],
+    )
+    assert payload["status"] in {"success", "error"}
+    verification = payload["verification"]
+    assert isinstance(verification, dict)
+    assert set(verification.keys()) == {"residual"}
+    assert verification["residual"] in {"ok", "failed"}
+    assert payload["details"]["verification_mode"] is None
+
+
 def test_full_suite_flag_passed(monkeypatch, tmp_path: Path) -> None:
     calls: list[dict] = []
 

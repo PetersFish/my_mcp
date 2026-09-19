@@ -45,8 +45,10 @@ APPLY_CODEMOD_DESCRIPTION = (
 )
 
 VERIFY_DESCRIPTION = (
-    "Run verification only (no mutations). Supports verification_mode "
-    "fast/standard/full or an explicit verify step list. Never returns source or diffs."
+    "Run verification only (no mutations). Default verification_mode is residual-only "
+    "(omit mode or pass null). Opt into fast/standard/full or an explicit verify step "
+    "list; standard/full may hit MCP host timeouts on large change sets. Never returns "
+    "source or diffs."
 )
 
 
@@ -157,7 +159,7 @@ def verify_refactor(
     project_root: str,
     changed_files: list[str] | None = None,
     needles: list[str] | None = None,
-    verification_mode: VerificationMode = "standard",
+    verification_mode: VerificationMode | None = None,
     verify: list[VerifyStep] | None = None,
     pytest_args: list[str] | None = None,
 ) -> dict[str, object]:

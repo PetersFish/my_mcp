@@ -117,7 +117,7 @@ Windows 上把上面的 `command` 换成 `.venv\\Scripts\\python.exe` 的绝对�
 
 常用可选字段：`dry_run`（默认 false）、`verify`（默认等价 `["residual"]`，还可加 `ruff` / `pyright` / `pytest`）、`verification_mode`（`fast` / `standard` / `full`）、`source_root`、`pytest_args`、`semantic_mode`（`best_effort` 默认 / `required`）。
 
-显式传入 `verify` 时以 `verify` 为准；只传 `verification_mode` 时按模式展开步骤：`fast` = LSP diagnostics + ruff；`standard` = residual + ruff + pyright + targeted pytest；`full` = 同上但 pytest 跑全量。
+显式传入 `verify` 时以 `verify` 为准；只传 `verification_mode` 时按模式展开步骤：`fast` = LSP diagnostics + ruff；`standard` = residual + ruff + pyright + targeted pytest；`full` = 同上但 pytest 跑全量。mutate 与 `verify_refactor` **默认都不传 mode** 时只跑 `residual`；重校验（ruff/pyright/pytest）优先留给目标项目本地/CI，需要时再单独调 `verify_refactor` 并显式传 `fast`/`standard`/`full`（大变更 + `standard` 绑在 mutate 上易触发 MCP 超时）。
 
 `rename_symbol` / `move_symbol` 会先走 Pyright semantic preflight（definition + references）；Pyright 不可用时默认 `best_effort` 继续 Rope，`required` 则中止。模块操作不做重 preflight，apply 后做 typed LSP refresh + diagnostics。`verify=["pyright"]` 会经与 LSP 相同的 runtime fallback（含 MCP 自带 CLI）。
 
@@ -151,7 +151,7 @@ Windows 上把上面的 `command` 换成 `.venv\\Scripts\\python.exe` 的绝对�
 
 ### verify_refactor
 
-只跑验证、不改文件。`verification_mode` 默认 `standard`；也可显式传 `verify` 步骤列表（与 `python_refactor` 相同锁定规则）。
+只跑验证、不改文件。`verification_mode` **默认 residual-only**（省略 mode，与 mutate 默认一致）；也可显式传 `fast` / `standard` / `full` 或 `verify` 步骤列表（与 `python_refactor` 相同锁定规则）。模式选用与本地/CI 启发式见安装的 `python-refactor` skill。
 
 调试（不经 MCP）：
 
@@ -166,7 +166,7 @@ python -m python_refactor_mcp.cli \
 
 ## 目标项目 AGENTS.md 片段
 
-把下面片段粘到**被重构的 Python 仓库**（不是本 MCP 仓库）：
+把下面片段粘到**被重构的 Python 仓库**（不是本 MCP 仓库）。详细 verify 模式表与本地/CI 启发式以 `python-refactor` skill 为准，勿在项目 AGENTS 里复制一整份。
 
 ```markdown
 ## Python Refactoring
@@ -175,7 +175,9 @@ For structural Python refactoring, always prefer the
 `python_refactor` tool over manual multi-file editing.
 Use `inspect_symbol` for definition/references/type instead of grep/read loops.
 Use `apply_codemod` for registered LibCST rewrites (preview-first).
-Use `verify_refactor` to re-check without re-running Rope.
+Use `verify_refactor` (default residual-only) to re-check without re-running Rope.
+Prefer local/CI for Ruff / Pyright / pytest; see the python-refactor skill for
+when to opt into verify_refactor fast/standard/full.
 
 Use `python_refactor` for:
 
@@ -186,6 +188,8 @@ Use `python_refactor` for:
 
 Do NOT manually rewrite imports across multiple files when
 `python_refactor` can perform the operation.
+Do NOT attach verification_mode=standard|full to python_refactor mutate
+unless the user explicitly asks (MCP timeout risk).
 
 After python_refactor succeeds:
 
@@ -196,9 +200,10 @@ After python_refactor succeeds:
    work. Do not search to confirm.
 3. A dry_run result never scans residual. Re-run without dry_run instead of searching.
 4. Only rg leftover_replace_from when it is a dotted module path. For symbol renames it
-   is a bare identifier; edit the listed hits and let Ruff/Pyright find the rest.
+   is a bare identifier; edit the listed hits and let local Ruff/Pyright find the rest.
 5. empty_packages are local keep-or-delete decisions, not a search task.
-6. Then run Ruff / Pyright / relevant pytest. Verification must not wait on leftover search.
+6. Then run Ruff / Pyright / relevant pytest via local/CI (or skill-guided
+   verify_refactor). Do not block those checks on leftover search finishing.
 
 Direct edits are allowed only for:
 - business logic changes

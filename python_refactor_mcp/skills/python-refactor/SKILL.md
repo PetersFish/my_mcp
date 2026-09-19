@@ -47,13 +47,14 @@ In the steps below, tool names mean whichever host-specific name applies.
 3. Prefer `dry_run=true` first when the blast radius is unclear.
 4. Call `python_refactor` with one of: `move_module`, `rename_module`, `rename_symbol`, `move_symbol`.
    Symbol rename/move preflights via Pyright; if Pyright is down, default `semantic_mode=best_effort` still runs Rope. Use `required` only when you must abort without semantics.
+   Do **not** pass `verification_mode=standard|full` (or `verify` containing `pyright`/`pytest`) on this mutate call unless the user explicitly asks for MCP-side heavy verify. Large renames + heavy verify often hit MCP host timeout (`-32001`). Default mutate verification is residual-only.
 5. For mechanical rewrites (`replace_qualified_name` / `replace_call_keyword` / `replace_decorator`), call `apply_codemod` with `dry_run=true` first, then `dry_run=false`.
 6. Do **not** glob/read/edit many files just to rewrite imports when these tools can do it.
 7. After success, `leftover_samples` is already the residual search. Edit only those `file:line` hits using `leftover_replace_from` -> `leftover_replace_to`. Follow `next_action`.
 8. If `leftover_samples` is empty **and** `verification.residual` is `ok` or `failed`, skip leftover work. Do **not** glob or grep the repo to confirm.
 9. A `dry_run` result never scans residual, so it says nothing about leftovers. Re-run without `dry_run` instead of searching.
 10. `empty_packages` are local keep-or-delete decisions, not a search task.
-11. Then run Ruff / Pyright / relevant pytest — preferably via `verify_refactor` or `verification_mode` on `python_refactor`. Verification must not wait on leftover search.
+11. Prefer **local/CI** for Ruff / Pyright / pytest after leftovers. Use a separate `verify_refactor` only for residual re-check (default) or opt-in heavier modes when local tooling is unavailable (see Verification). Do not block local/CI checks on leftover search finishing.
 
 Direct edits remain allowed for business logic and for leftovers the tool cannot rewrite.
 
@@ -65,6 +66,29 @@ Direct edits remain allowed for business logic and for leftovers the tool cannot
 - If `remaining_old_references` exceeds the sample list, run one exact search for `leftover_replace_from` **only when it is a dotted module path** (`move_module` / `rename_module`).
 - For `rename_symbol` / `move_symbol` the needle is a bare identifier such as `save`. Never grep that repo-wide; edit the listed hits and let Ruff/Pyright surface the rest.
 
+## Verification
+
+Rule of thumb: **mutate = residual only**; **local/CI = ruff/pyright/pytest**; MCP `fast`/`standard`/`full` only when local tooling is unavailable or the user explicitly asks. Always call `verify_refactor` as a **separate** request from mutate; pass `changed_files` and `needles` from the mutate result when useful.
+
+| Mode | Steps | Use when | Avoid when |
+| --- | --- | --- | --- |
+| **default** (omit `verification_mode`) | `residual` | After mutate / leftover edits; re-check old-name leftovers. Preferred MCP verify. | — |
+| **fast** | LSP `diagnostics` + `ruff` on `changed_files` | Local/CI not available; want a quick MCP lint signal. Separate call from mutate. | Prefer local ruff if available; large sets near MCP timeout |
+| **standard** | `residual` + `ruff` + `pyright` + targeted `pytest` (≤10 test files) | Cannot rely on local/CI and need an MCP gate; medium blast radius. Separate call. | Same request as mutate; large renames (`-32001`); when local/CI will run the same tools |
+| **full** | same as standard but full pytest suite | Rare: need full suite inside MCP and no local pytest. | Default workflows; prefer local/CI `pytest` |
+
+### How to judge local/CI has ruff / pyright / pytest
+
+Treat tools **independently**. Bias toward deferring to local/CI. Do not deep-scrape CI logs or install tools just to probe.
+
+Any one positive ⇒ that tool is “available locally” (config/CI alone counts even if the binary is not installed yet):
+
+1. **PATH / venv** from `project_root`: `command -v ruff`, `command -v pyright`, `command -v pytest`
+2. **Project declared tooling**: ruff → `[tool.ruff]` / `ruff.toml` / `.ruff.toml`; pyright → `[tool.pyright]` / `pyrightconfig.json` / `[tool.basedpyright]`; pytest → `[tool.pytest]` / `pytest.ini` / tests `conftest.py` / pytest in deps
+3. **CI / hooks** mention the tool: `.github/workflows/*`, `.pre-commit-config.yaml`, etc.
+
+Use MCP `fast`/`standard` only if PATH probe fails **and** config/CI/hooks are empty **and** the user did not say they will run local/CI. If unsure and the repo looks like a normal app (`pyproject.toml` + tests): **default to defer**.
+
 ## Arguments
 
 - `move_module`: `source` + `target` (dotted paths)
@@ -72,7 +96,8 @@ Direct edits remain allowed for business logic and for leftovers the tool cannot
 - `rename_symbol`: `module` + `symbol` + `new_name` (`symbol` is `Name` or `Class.method`)
 - `move_symbol`: `module` + `symbol` + `target` (destination module dotted path)
 - Optional `semantic_mode`: `best_effort` (default) or `required`
-- Optional `verification_mode`: `fast` / `standard` / `full` (explicit `verify` list wins when provided)
+- Optional `verification_mode` on mutate: prefer omit (residual). Use `fast` / `standard` / `full` only when explicitly needed (explicit `verify` list wins when provided)
+- `verify_refactor`: default residual-only; see Verification table for `fast` / `standard` / `full`
 - `apply_codemod`: `codemod` + `params` + optional `paths` (default `dry_run=true`)
 
 Always pass `project_root` as an absolute directory (macOS and Windows). The result is compact JSON: file counts, leftover samples, and `next_action`; never diffs.

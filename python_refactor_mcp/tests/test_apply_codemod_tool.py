@@ -75,3 +75,30 @@ def test_apply_codemod_tool_writes_when_not_dry_run(tmp_path: Path) -> None:
     assert payload["status"] == "success"
     assert payload["dry_run"] is False
     assert "from new.mod import Foo" in target.read_text(encoding="utf-8")
+
+
+def test_apply_codemod_tool_normalizes_safe_import(tmp_path: Path) -> None:
+    target = tmp_path / "consumer.py"
+    target.write_text(
+        "import app.services.report_ops\n\n"
+        "def run() -> int:\n"
+        "    return app.services.report_ops.build_report()\n",
+        encoding="utf-8",
+    )
+
+    payload = _call_tool(
+        "apply_codemod",
+        {
+            "project_root": str(tmp_path),
+            "codemod": "normalize_imports",
+            "dry_run": False,
+        },
+    )
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+
+    assert payload["status"] == "success"
+    assert payload["files_changed"] == 1
+    assert "from app.services.report_ops import build_report" in target.read_text(
+        encoding="utf-8"
+    )

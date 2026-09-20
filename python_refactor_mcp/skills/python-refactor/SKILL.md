@@ -48,13 +48,16 @@ In the steps below, tool names mean whichever host-specific name applies.
 4. Call `python_refactor` with one of: `move_module`, `rename_module`, `rename_symbol`, `move_symbol`.
    Symbol rename/move preflights via Pyright; if Pyright is down, default `semantic_mode=best_effort` still runs Rope. Use `required` only when you must abort without semantics.
    Do **not** pass `verification_mode=standard|full` (or `verify` containing `pyright`/`pytest`) on this mutate call unless the user explicitly asks for MCP-side heavy verify. Large renames + heavy verify often hit MCP host timeout (`-32001`). Default mutate verification is residual-only.
-5. For mechanical rewrites (`replace_qualified_name` / `replace_call_keyword` / `replace_decorator`), call `apply_codemod` with `dry_run=true` first, then `dry_run=false`.
+5. For mechanical rewrites (`normalize_imports` / `replace_qualified_name` / `replace_call_keyword` / `replace_decorator`), call `apply_codemod` with `dry_run=true` first, then `dry_run=false`.
 6. Do **not** glob/read/edit many files just to rewrite imports when these tools can do it.
-7. After success, `leftover_samples` is already the residual search. Edit only those `file:line` hits using `leftover_replace_from` -> `leftover_replace_to`. Follow `next_action`.
-8. If `leftover_samples` is empty **and** `verification.residual` is `ok` or `failed`, skip leftover work. Do **not** glob or grep the repo to confirm.
-9. A `dry_run` result never scans residual, so it says nothing about leftovers. Re-run without `dry_run` instead of searching.
-10. `empty_packages` are local keep-or-delete decisions, not a search task.
-11. Prefer **local/CI** for Ruff / Pyright / pytest after leftovers. Use a separate `verify_refactor` only for residual re-check (default) or opt-in heavier modes when local tooling is unavailable (see Verification). Do not block local/CI checks on leftover search finishing.
+7. `import_issues` is a structured list of Rope/Pyright import diagnostics in
+   `file:line:column: kind: message` form. Fix each listed location before broad
+   verification; do not search the repo to rediscover them.
+8. After success, `leftover_samples` is already the residual search. Edit only those `file:line` hits using `leftover_replace_from` -> `leftover_replace_to`. Follow `next_action`.
+9. If `leftover_samples` is empty **and** `verification.residual` is `ok` or `failed`, skip leftover work. Do **not** glob or grep the repo to confirm.
+10. A `dry_run` result never scans residual, so it says nothing about leftovers. Re-run without `dry_run` instead of searching.
+11. `empty_packages` are local keep-or-delete decisions, not a search task.
+12. Prefer **local/CI** for Ruff / Pyright / pytest after leftovers. Use a separate `verify_refactor` only for residual re-check (default) or opt-in heavier modes when local tooling is unavailable (see Verification). Do not block local/CI checks on leftover search finishing.
 
 Direct edits remain allowed for business logic and for leftovers the tool cannot rewrite.
 

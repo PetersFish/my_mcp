@@ -29,5 +29,6 @@ class RefactorResult(BaseModel):
     summary: str | None = None
     metrics: dict[str, int] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
+    import_issues: list[str] = Field(default_factory=list)
     details: dict[str, object] = Field(default_factory=dict)
     semantic_status: str | None = None

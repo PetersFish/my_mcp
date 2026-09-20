@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import re
 import time
 from pathlib import Path
 from typing import Any, Protocol
@@ -84,6 +86,7 @@ def run_refactor(
     )
     metrics: dict[str, int] = {}
     warnings: list[str] = []
+    import_issues: list[str] = []
     details: dict[str, object] = {}
     semantic_status: str | None = None
 
@@ -193,6 +196,8 @@ def run_refactor(
             changed=ctx.changed_files,
             deleted=ctx.deleted_files,
             warnings=warnings,
+            import_issues=import_issues,
+            source_root=source_root,
             details=details,
             ctx=ctx,
         )
@@ -213,6 +218,7 @@ def run_refactor(
                     error=refresh_error.message,
                     metrics=metrics,
                     warnings=warnings,
+                    import_issues=import_issues,
                     details={**details, "code": refresh_error.code},
                     semantic_status=ctx.semantic_status if ctx.semantic_status != "uninitialized" else semantic_status,
                     summary=_summary(request),
@@ -318,6 +324,7 @@ def run_refactor(
             summary=_summary(request),
             metrics=metrics,
             warnings=warnings,
+            import_issues=import_issues,
             details=details,
             semantic_status=semantic_status,
         )
@@ -340,19 +347,20 @@ def _run_symbol_preflight(
     details: dict[str, object],
 ) -> RefactorResult | None:
     assert request.module and request.symbol
+    symbol = request.symbol
     try:
 
         async def _preflight() -> tuple[Any, Any, bool | None]:
             position = await service.resolve_symbol(
                 request.project_root,
                 module=request.module,
-                symbol=request.symbol,
+                symbol=symbol,
                 source_root=request.source_root,
             )
             refs = await service.references(Path(request.project_root), position)
             exists: bool | None = None
             if request.operation == "move_symbol" and request.target:
-                leaf = request.symbol.split(".")[-1]
+                leaf = symbol.split(".")[-1]
                 exists = await service.module_defines_symbol(
                     request.project_root,
                     module=request.target,
@@ -464,6 +472,8 @@ def _refresh_and_validate(
     changed: list[Path],
     deleted: list[Path],
     warnings: list[str],
+    import_issues: list[str],
+    source_root: Path,
     details: dict[str, object],
     ctx: OperationContext,
 ) -> RefactorError | None:
@@ -532,6 +542,9 @@ def _refresh_and_validate(
                 continue
             message = str(diag.get("message", "diagnostic")).strip()
             diagnostic_warnings.append(f"{path.relative_to(root).as_posix()}: {message}")
+            issue = _format_import_issue(root, source_root, path, diag, message)
+            if issue is not None and issue not in import_issues:
+                import_issues.append(issue)
             if len(diagnostic_warnings) >= _MAX_DIAGNOSTIC_WARNINGS:
                 break
         if len(diagnostic_warnings) >= _MAX_DIAGNOSTIC_WARNINGS:
@@ -564,6 +577,169 @@ def _attach_runtime_details(manager: Any, root: Path, details: dict[str, object]
     source = getattr(getattr(session, "runtime", None), "source", None)
     if source:
         details.setdefault("pyright_runtime", source)
+
+
+def _format_import_issue(
+    root: Path,
+    source_root: Path,
+    path: Path,
+    diag: dict[str, object],
+    message: str,
+) -> str | None:
+    line, character = _diagnostic_location(diag)
+    if line is None:
+        line, character = _fallback_diagnostic_location(path, message)
+    if not _is_import_diagnostic(message, path, line):
+        return None
+    kind = "dangling_import"
+    if line is not None and _is_self_import(path, source_root, line, message):
+        kind = "self_import"
+    elif line is not None and _is_type_checking_related(path, line, message):
+        kind = "type_checking_annotation_reference"
+    rel = path.relative_to(root).as_posix()
+    return f"{rel}:{line}:{character}: {kind}: {message}"
+
+
+def _diagnostic_location(diag: dict[str, object]) -> tuple[int | None, int | None]:
+    raw_range = diag.get("range")
+    if not isinstance(raw_range, dict):
+        return None, None
+    start = raw_range.get("start")
+    if not isinstance(start, dict):
+        return None, None
+    raw_line = start.get("line")
+    raw_character = start.get("character")
+    if not isinstance(raw_line, int) or not isinstance(raw_character, int):
+        return None, None
+    return raw_line + 1, raw_character + 1
+
+
+def _fallback_diagnostic_location(path: Path, message: str) -> tuple[int, int]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return 1, 1
+    quoted = re.search(r'"([^"]+)"', message)
+    needle = quoted.group(1) if quoted is not None else ""
+    if needle:
+        for index, raw in enumerate(lines, start=1):
+            column = raw.find(needle)
+            if column >= 0:
+                return index, column + 1
+    for index, raw in enumerate(lines, start=1):
+        column = raw.find("import")
+        if column >= 0:
+            return index, column + 1
+    return 1, 1
+
+
+def _is_import_diagnostic(message: str, path: Path, line: int | None) -> bool:
+    lowered = message.lower()
+    if any(
+        needle in lowered
+        for needle in (
+            "could not be resolved",
+            "cannot be resolved",
+            "unknown import",
+            "reportmissingimport",
+        )
+    ):
+        return True
+    return line is not None and _is_type_checking_related(path, line, message) and "not defined" in lowered
+
+
+def _is_self_import(path: Path, source_root: Path, line: int, message: str) -> bool:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return False
+    current_modules = _module_names_for_path(source_root, path)
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Import, ast.ImportFrom)):
+            continue
+        if not _line_in_node(node, line):
+            continue
+        if isinstance(node, ast.Import):
+            imported = [alias.name for alias in node.names]
+        elif node.module is None:
+            base = _resolve_import_from_name(node, current_modules)
+            imported = [
+                f"{base}.{alias.name}"
+                for alias in node.names
+                if alias.name in message or f"{base}.{alias.name}" in message
+            ]
+        else:
+            imported = [_resolve_import_from_name(node, current_modules)]
+        if any(name in current_modules for name in imported):
+            return True
+    return False
+
+
+def _is_in_type_checking(path: Path, line: int) -> bool:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If) or not _is_type_checking_test(node.test):
+            continue
+        if any(_line_in_node(child, line) for child in node.body):
+            return True
+    return False
+
+
+def _is_type_checking_related(path: Path, line: int, message: str) -> bool:
+    if _is_in_type_checking(path, line):
+        return True
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return False
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If) or not _is_type_checking_test(node.test):
+            continue
+        for child in node.body:
+            if isinstance(child, ast.ImportFrom):
+                names.update(alias.asname or alias.name for alias in child.names)
+            elif isinstance(child, ast.Import):
+                names.update(alias.asname or alias.name.split(".")[0] for alias in child.names)
+    return any(name in message for name in names)
+
+
+def _is_type_checking_test(node: ast.expr) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id == "TYPE_CHECKING"
+    return isinstance(node, ast.Attribute) and node.attr == "TYPE_CHECKING"
+
+
+def _line_in_node(node: ast.AST, line: int) -> bool:
+    start = getattr(node, "lineno", None)
+    end = getattr(node, "end_lineno", None)
+    return isinstance(start, int) and isinstance(end, int) and start <= line <= end
+
+
+def _resolve_import_from_name(node: ast.ImportFrom, current_modules: set[str]) -> str:
+    if not current_modules:
+        return ""
+    current = next(iter(current_modules)).split(".")
+    if node.level == 0:
+        return node.module or ""
+    base = current[: max(0, len(current) - node.level)]
+    if node.module:
+        base.extend(node.module.split("."))
+    return ".".join(base)
+
+
+def _module_names_for_path(root: Path, path: Path) -> set[str]:
+    try:
+        relative = path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return set()
+    parts = list(relative.with_suffix("").parts)
+    if parts and parts[-1] == "__init__":
+        parts.pop()
+    return {".".join(parts)} if parts else set()
 
 
 def _is_blocking_diagnostic(diag: dict[str, object]) -> bool:

@@ -13,6 +13,10 @@ from python_refactor_mcp.codemods.builtin.replace_qualified_name import (
     ReplaceQualifiedNameCodemod,
     build_transformer as build_qualified_name,
 )
+from python_refactor_mcp.codemods.builtin.normalize_imports import (
+    NormalizeImportsCodemod,
+    build_transformer as build_normalize_imports,
+)
 
 _DEFAULT: CodemodRegistry | None = None
 
@@ -26,6 +30,13 @@ def default_registry() -> CodemodRegistry:
 
 def build_builtin_registry() -> CodemodRegistry:
     registry = CodemodRegistry()
+    normalize = NormalizeImportsCodemod()
+    registry.register(
+        normalize.id,
+        build_normalize_imports,
+        normalize.params_model,
+        description=normalize.description,
+    )
     qn = ReplaceQualifiedNameCodemod()
     registry.register(
         qn.id,

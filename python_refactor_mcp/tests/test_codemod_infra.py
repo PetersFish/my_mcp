@@ -14,6 +14,7 @@ from python_refactor_mcp.services.codemod_service import CodemodService
 def test_registry_lists_builtin_ids() -> None:
     ids = default_registry().list_ids()
     assert ids == [
+        "normalize_imports",
         "replace_call_keyword",
         "replace_decorator",
         "replace_qualified_name",

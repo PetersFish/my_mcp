@@ -27,7 +27,7 @@ TOOL_DESCRIPTION = (
     "Use for module/symbol move and rename instead of multi-file import edits. "
     "project_root must be the target project's absolute path. "
     "Returns a compact JSON summary with file lists, leftover_samples, "
-    "leftover_replace_from/to, next_action, and empty_packages; never diffs. "
+    "leftover_replace_from/to, import_issues, next_action, and empty_packages; never diffs. "
     "After success, edit only leftover_samples in place using leftover_replace_from -> "
     "leftover_replace_to. Follow next_action. Do not grep or glob the repo."
 )
@@ -41,6 +41,7 @@ INSPECT_DESCRIPTION = (
 APPLY_CODEMOD_DESCRIPTION = (
     "Apply a registered LibCST codemod (preview-first; dry_run defaults to true). "
     "Only built-in codemod ids are accepted — never arbitrary transformer source. "
+    "Available ids include normalize_imports for safe qualified-import cleanup. "
     "Returns compact counts (files_scanned/matched/changed, transform_count); never diffs."
 )
 

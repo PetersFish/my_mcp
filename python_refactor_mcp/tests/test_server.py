@@ -46,3 +46,12 @@ async def _list_tools() -> list[str]:
     async with Client(mcp) as client:
         listed = await client.list_tools()
         return [tool.name for tool in listed]
+
+
+def test_server_exposes_the_four_public_tools() -> None:
+    assert set(asyncio.run(_list_tools())) == {
+        "python_refactor",
+        "inspect_symbol",
+        "apply_codemod",
+        "verify_refactor",
+    }

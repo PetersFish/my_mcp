@@ -50,6 +50,31 @@ def test_executor_move_module_reports_leftovers_and_empty_packages(mini_pkg: Pat
     assert "app.services.report -> app.reporting.application.report_service" in result.next_action
 
 
+def test_executor_does_not_normalize_rope_qualified_imports(mini_pkg: Path) -> None:
+    consumer = mini_pkg / "app" / "api" / "report.py"
+    consumer.write_text(
+        "import app.services.report\n\n"
+        "def load() -> int:\n"
+        "    return app.services.report.build_report()\n",
+        encoding="utf-8",
+    )
+    result = run_refactor(
+        RefactorRequest(
+            operation="rename_module",
+            project_root=str(mini_pkg),
+            source="app.services.report",
+            new_name="report_service",
+        )
+    )
+
+    assert result.status == "success"
+    assert consumer.read_text(encoding="utf-8") == (
+        "import app.services.report_service\n\n"
+        "def load() -> int:\n"
+        "    return app.services.report_service.build_report()\n"
+    )
+
+
 def test_executor_dry_run_skips_residual(mini_pkg: Path) -> None:
     result = run_refactor(
         RefactorRequest(

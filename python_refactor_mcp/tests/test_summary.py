@@ -107,6 +107,21 @@ def test_compact_result_without_residual_check_does_not_claim_no_leftovers() -> 
     assert 'verify=["residual"]' in result.next_action
 
 
+def test_compact_result_next_action_surfaces_import_issues() -> None:
+    result = compact_result(
+        operation="move_module",
+        dry_run=False,
+        verification={"residual": "ok"},
+        import_issues=["app/api/reports.py:1:1: dangling_import: missing module"],
+    )
+    assert result.import_issues == [
+        "app/api/reports.py:1:1: dangling_import: missing module"
+    ]
+    assert result.next_action == (
+        "Rope left 1 import issue(s). Fix each file:line, then run pyright/ruff."
+    )
+
+
 def test_compact_result_next_action_truncated_dotted_needle() -> None:
     samples = [f"f{i}.py:1:app.old" for i in range(LEFTOVER_SAMPLES_LIMIT + 5)]
     result = compact_result(

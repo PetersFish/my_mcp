@@ -49,6 +49,40 @@ class WarningDiagnosticsService(SpySemanticService):
         ]
 
 
+class TypeCheckingDiagnosticsService(SpySemanticService):
+    async def diagnostics(self, project_root, path=None, *, wait_timeout: float = 2.0):
+        self.diagnostics_calls += 1
+        if path is not None and path.name == "type_consumer.py":
+            return [
+                {
+                    "severity": 1,
+                    "message": '"ReportDAO" is not defined',
+                    "range": {
+                        "start": {"line": 5, "character": 18},
+                        "end": {"line": 5, "character": 27},
+                    },
+                }
+            ]
+        return []
+
+
+class SelfImportDiagnosticsService(SpySemanticService):
+    async def diagnostics(self, project_root, path=None, *, wait_timeout: float = 2.0):
+        self.diagnostics_calls += 1
+        if path is not None and path.name == "self_import_new.py":
+            return [
+                {
+                    "severity": 1,
+                    "message": 'Import "app.services.self_import_new" could not be resolved',
+                    "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 10},
+                    },
+                }
+            ]
+        return []
+
+
 def test_module_ops_skip_heavy_preflight(sample_project: Path) -> None:
     spy = SpySemanticService()
     result = run_refactor(
@@ -114,3 +148,64 @@ def test_module_diagnostics_surface_as_warnings_in_best_effort(sample_project: P
     assert spy.refresh_calls == 1
     assert spy.diagnostics_calls >= 1
     assert any("could not be resolved" in warning for warning in result.warnings)
+    assert result.import_issues
+    assert all("dangling_import" in issue for issue in result.import_issues)
+    assert any("app/services/report_service.py" in issue for issue in result.import_issues)
+
+
+def test_type_checking_diagnostic_is_located_and_classified(sample_project: Path) -> None:
+    type_consumer = sample_project / "src/app/services/type_consumer.py"
+    type_consumer.write_text(
+        "from typing import TYPE_CHECKING\n"
+        "\n"
+        "if TYPE_CHECKING:\n"
+        "    from app.services.report import ReportDAO\n"
+        "\n"
+        "def load(value: ReportDAO) -> int:\n"
+        "    return value.load()\n",
+        encoding="utf-8",
+    )
+    result = run_refactor(
+        RefactorRequest(
+            operation="rename_module",
+            project_root=str(sample_project),
+            source="app.services.report",
+            new_name="report_service",
+            source_root="src",
+            semantic_mode="best_effort",
+        ),
+        semantic_service=TypeCheckingDiagnosticsService(),
+    )
+
+    assert result.status == "success"
+    assert result.import_issues == [
+        'src/app/services/type_consumer.py:6:19: '
+        'type_checking_annotation_reference: "ReportDAO" is not defined'
+    ]
+
+
+def test_self_import_diagnostic_is_classified(sample_project: Path) -> None:
+    self_import = sample_project / "src/app/services/self_import.py"
+    self_import.write_text(
+        "from . import self_import, missing\n\n"
+        "class ReportDAO:\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    result = run_refactor(
+        RefactorRequest(
+            operation="rename_module",
+            project_root=str(sample_project),
+            source="app.services.self_import",
+            new_name="self_import_new",
+            source_root="src",
+            semantic_mode="best_effort",
+        ),
+        semantic_service=SelfImportDiagnosticsService(),
+    )
+
+    assert result.status == "success"
+    assert result.import_issues == [
+        "src/app/services/self_import_new.py:1:1: self_import: "
+        'Import "app.services.self_import_new" could not be resolved'
+    ]

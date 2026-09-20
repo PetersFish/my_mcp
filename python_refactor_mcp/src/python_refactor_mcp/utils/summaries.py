@@ -62,6 +62,7 @@ def next_action_for(
     leftover_samples: list[str],
     remaining_old_references: int,
     empty_packages: list[str],
+    import_issues: list[str],
     leftover_replace_from: str | None,
     leftover_replace_to: str | None,
 ) -> str:
@@ -82,6 +83,12 @@ def next_action_for(
             "are unknown. Re-run without dry_run to get leftover_samples. "
             f"Do not grep or glob.{empty_note}"
         ).strip()
+
+    if import_issues:
+        return (
+            f"Rope left {len(import_issues)} import issue(s). Fix each file:line, "
+            "then run pyright/ruff."
+        )
 
     if not residual_checked:
         return (
@@ -126,6 +133,7 @@ def compact_result(
     leftover_replace_from: str | None = None,
     leftover_replace_to: str | None = None,
     empty_packages: list[str] | None = None,
+    import_issues: list[str] | None = None,
     conflicts: list[str] | None = None,
     git_dirty_before: bool = False,
     verification: dict[str, str] | None = None,
@@ -158,6 +166,7 @@ def compact_result(
         leftover_samples=leftover_listed,
         remaining_old_references=remaining,
         empty_packages=empty,
+        import_issues=list(import_issues or []),
         leftover_replace_from=leftover_replace_from,
         leftover_replace_to=leftover_replace_to,
     )
@@ -185,6 +194,7 @@ def compact_result(
         summary=summary,
         metrics=dict(metrics or {}),
         warnings=list(warnings or []),
+        import_issues=list(import_issues or []),
         details=dict(details or {}),
         semantic_status=semantic_status,
     )

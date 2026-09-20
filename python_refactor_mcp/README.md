@@ -121,7 +121,7 @@ Windows 上把上面的 `command` 换成 `.venv\\Scripts\\python.exe` 的绝对�
 
 `rename_symbol` / `move_symbol` 会先走 Pyright semantic preflight（definition + references）；Pyright 不可用时默认 `best_effort` 继续 Rope，`required` 则中止。模块操作不做重 preflight，apply 后做 typed LSP refresh + diagnostics。`verify=["pyright"]` 会经与 LSP 相同的 runtime fallback（含 MCP 自带 CLI）。
 
-结果是 compact JSON：`files_changed`、路径列表、`leftover_samples`、`leftover_replace_from` / `leftover_replace_to`、`next_action`、`empty_packages`，以及可选的 `summary` / `metrics`（含 `duration_ms` / `result_chars`）/ `warnings` / `details` / `semantic_status`。没有 unified diff，也没有文件全文。`leftover_samples` 就是 residual 搜索结果；按 `next_action` 定点改，不要再全仓搜索。
+结果是 compact JSON：`files_changed`、路径列表、`leftover_samples`、`leftover_replace_from` / `leftover_replace_to`、`next_action`、`empty_packages`、`import_issues`，以及可选的 `summary` / `metrics`（含 `duration_ms` / `result_chars`）/ `warnings` / `details` / `semantic_status`。没有 unified diff，也没有文件全文。`leftover_samples` 就是 residual 搜索结果；按 `next_action` 定点改，不要再全仓搜索。`import_issues` 使用 `file:line:column: kind: message` 格式，类型包括 `self_import`、`dangling_import` 和 `type_checking_annotation_reference`。
 
 ### inspect_symbol
 
@@ -142,10 +142,18 @@ Windows 上把上面的 `command` 换成 `.venv\\Scripts\\python.exe` 的绝对�
 
 | 字段 | 说明 |
 | --- | --- |
-| `codemod` | `replace_qualified_name` / `replace_call_keyword` / `replace_decorator` |
+| `codemod` | `normalize_imports` / `replace_qualified_name` / `replace_call_keyword` / `replace_decorator` |
 | `params` | 各 codemod 参数（如 `old`/`new`，或 `function`/`old`/`new`） |
 | `paths` | 相对 `project_root` 的扫描路径，默认 `["."]` |
 | `dry_run` | 默认 true；false 时 hash 校验后原子写盘并 LSP refresh |
+
+`normalize_imports` 只改写可安全证明的限定模块引用：例如把
+`import app.services.report_ops` 加 `app.services.report_ops.build_report()`
+归一为原 import 加 `from app.services.report_ops import build_report` 和
+`build_report()`，从而保留模块对外可访问的 `app` 绑定。
+它会跳过模块对象本身仍被使用、局部名称冲突、多 alias import 等场景。
+它不会隐式挂接到 `python_refactor`；先 preview，再显式调用
+`apply_codemod` 执行，避免 Rope 重构产生额外 diff。
 
 返回 compact：`files_scanned` / `files_matched` / `files_changed` / `transform_count` / `metrics`；无 diff/源码。parse 失败或并发修改会整批中止（零半写）。
 

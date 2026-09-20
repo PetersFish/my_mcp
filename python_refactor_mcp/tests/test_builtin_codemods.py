@@ -88,6 +88,174 @@ def test_replace_qualified_name_apply(codemod_pkg: Path) -> None:
     assert "from old.mod import Foo" not in text
 
 
+def test_normalize_imports_rewrites_safe_qualified_module_use(tmp_path: Path) -> None:
+    target = tmp_path / "consumer.py"
+    target.write_text(
+        "import app.services.report_ops\n"
+        "\n"
+        "\n"
+        "def run() -> int:\n"
+        "    return app.services.report_ops.build_report()\n",
+        encoding="utf-8",
+    )
+
+    preview = CodemodService().apply(
+        tmp_path,
+        codemod="normalize_imports",
+        dry_run=True,
+    )
+
+    assert preview.status == "success"
+    assert preview.files_matched == 1
+    assert target.read_text(encoding="utf-8") == (
+        "import app.services.report_ops\n"
+        "\n"
+        "\n"
+        "def run() -> int:\n"
+        "    return app.services.report_ops.build_report()\n"
+    )
+
+    result = CodemodService().apply(
+        tmp_path,
+        codemod="normalize_imports",
+        dry_run=False,
+    )
+
+    assert result.status == "success"
+    assert target.read_text(encoding="utf-8") == (
+        "import app.services.report_ops\n"
+        "from app.services.report_ops import build_report\n"
+        "\n"
+        "\n"
+        "def run() -> int:\n"
+        "    return build_report()\n"
+    )
+
+
+def test_normalize_imports_skips_unsafe_bindings(tmp_path: Path) -> None:
+    target = tmp_path / "consumer.py"
+    source = (
+        "import app.services.report_ops\n"
+        "\n"
+        "\n"
+        "def run(app) -> int:\n"
+        "    return app.services.report_ops.build_report()\n"
+    )
+    target.write_text(source, encoding="utf-8")
+
+    result = CodemodService().apply(
+        tmp_path,
+        codemod="normalize_imports",
+        dry_run=False,
+    )
+
+    assert result.status == "success"
+    assert result.files_matched == 0
+    assert target.read_text(encoding="utf-8") == source
+
+
+def test_normalize_imports_skips_aliases_and_module_object_use(tmp_path: Path) -> None:
+    target = tmp_path / "consumer.py"
+    source = (
+        "import app.services.report_ops as report_ops\n"
+        "\n"
+        "\n"
+        "def run() -> object:\n"
+        "    return report_ops\n"
+    )
+    target.write_text(source, encoding="utf-8")
+
+    result = CodemodService().apply(
+        tmp_path,
+        codemod="normalize_imports",
+        dry_run=False,
+    )
+
+    assert result.status == "success"
+    assert result.files_matched == 0
+    assert target.read_text(encoding="utf-8") == source
+
+
+@pytest.mark.parametrize(
+    "binding",
+    [
+        "    for app in items:\n        return app.services.report_ops.build_report()\n",
+        "    with context() as app:\n        return app.services.report_ops.build_report()\n",
+        "    return app.services.report_ops.build_report()\n",
+    ],
+)
+def test_normalize_imports_skips_shadowed_bindings(
+    tmp_path: Path,
+    binding: str,
+) -> None:
+    target = tmp_path / "consumer.py"
+    source = (
+        "import app.services.report_ops\n"
+        "import other as build_report\n"
+        "\n"
+        "def run(items, context) -> object:\n"
+        f"{binding}"
+    )
+    target.write_text(source, encoding="utf-8")
+
+    result = CodemodService().apply(
+        tmp_path,
+        codemod="normalize_imports",
+        dry_run=False,
+    )
+
+    assert result.status == "success"
+    assert result.files_matched == 0
+    assert target.read_text(encoding="utf-8") == source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import app.services.report_ops\n"
+        "import other.deep as app\n\n"
+        "def run() -> object:\n"
+        "    return app.services.report_ops.build_report()\n",
+        "import app.services.report_ops\n\n"
+        "def run() -> object:\n"
+        "    return app.services\n",
+        "import app.services.report_ops\n\n"
+        "def run(value) -> object:\n"
+        "    app.services.report_ops.build_report = value\n"
+        "    return value\n",
+        "import app.services.report_ops\n\n"
+        "def run() -> None:\n"
+        "    del app.services.report_ops.build_report\n",
+        "import app.services.report_ops\n\n"
+        "def run() -> None:\n"
+        "    del app.services.report_ops.handlers[\"x\"]\n",
+        "from other import *\n"
+        "import app.services.report_ops\n\n"
+        "def run() -> object:\n"
+        "    return app.services.report_ops.build_report()\n",
+        "import app.services.report_ops\n\n"
+        "def run(items) -> object:\n"
+        "    return [app.services.report_ops.build_report() for app in items]\n",
+    ],
+)
+def test_normalize_imports_skips_ambiguous_module_usage(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    target = tmp_path / "consumer.py"
+    target.write_text(source, encoding="utf-8")
+
+    result = CodemodService().apply(
+        tmp_path,
+        codemod="normalize_imports",
+        dry_run=False,
+    )
+
+    assert result.status == "success"
+    assert result.files_matched == 0
+    assert target.read_text(encoding="utf-8") == source
+
+
 def test_replace_call_keyword_apply(codemod_pkg: Path) -> None:
     result = CodemodService().apply(
         codemod_pkg,

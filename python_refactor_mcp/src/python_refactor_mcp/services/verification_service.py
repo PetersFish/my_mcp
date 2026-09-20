@@ -35,7 +35,7 @@ def resolve_verify_steps(
     """Resolve verification steps.
 
     Lock: explicit ``verify`` wins when provided; otherwise ``verification_mode``
-    expands to steps; otherwise default ``[\"residual\"]`` (V1 compat).
+    expands to steps; otherwise default to the ``fast`` steps.
     Returns (steps, mode_used, full_pytest).
     """
     if verify is not None:
@@ -44,7 +44,7 @@ def resolve_verify_steps(
         return list(verify), mode, full_pytest
     if verification_mode is not None:
         return list(VERIFICATION_MODE_STEPS[verification_mode]), verification_mode, verification_mode == "full"
-    return ["residual"], None, False
+    return list(VERIFICATION_MODE_STEPS["fast"]), None, False
 
 
 def scan_residual(

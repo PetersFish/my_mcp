@@ -46,7 +46,7 @@ APPLY_CODEMOD_DESCRIPTION = (
 )
 
 VERIFY_DESCRIPTION = (
-    "Run verification only (no mutations). Default verification_mode is residual-only "
+    "Run verification only (no mutations). Default verification_mode is fast "
     "(omit mode or pass null). Opt into fast/standard/full or an explicit verify step "
     "list; standard/full may hit MCP host timeouts on large change sets. Never returns "
     "source or diffs."

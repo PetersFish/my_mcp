@@ -4,6 +4,15 @@ import sys
 from pathlib import Path
 
 from python_refactor_mcp.models import RefactorResult
+from python_refactor_mcp.cli import build_parser
+
+
+def test_cli_defaults_to_fast_verification() -> None:
+    args = build_parser().parse_args(
+        ["--operation", "rename_module", "--project-root", "/tmp/project"]
+    )
+
+    assert args.verify == "diagnostics,ruff"
 
 
 def test_cli_prints_compact_json(mini_pkg: Path) -> None:

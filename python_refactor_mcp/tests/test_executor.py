@@ -17,14 +17,15 @@ def test_executor_rename_symbol_success(mini_pkg: Path) -> None:
     assert result.status == "success"
     assert result.files_changed >= 1
     assert "diff" not in result.model_dump()
-    assert result.verification.get("residual") == "ok"
+    assert result.verification.get("diagnostics") == "ok"
+    assert result.verification.get("ruff") in {"ok", "skipped"}
     assert "ReportDAO" not in (mini_pkg / "app" / "dynamic.py").read_text(encoding="utf-8")
     assert result.remaining_old_references == 0
     assert result.leftover_samples == []
     assert result.leftover_replace_from == "ReportDAO"
     assert result.leftover_replace_to == "ReportRepository"
-    assert result.next_action.startswith("No leftovers")
-    assert "Do not search" in result.next_action
+    assert "residual was not scanned" in result.next_action
+    assert 'verify=["residual"]' in result.next_action
 
 
 def test_executor_move_module_reports_leftovers_and_empty_packages(mini_pkg: Path) -> None:
@@ -34,6 +35,7 @@ def test_executor_move_module_reports_leftovers_and_empty_packages(mini_pkg: Pat
             project_root=str(mini_pkg),
             source="app.services.report",
             target="app.reporting.application.report_service",
+            verify=["residual"],
         )
     )
     assert result.status == "success"
@@ -75,7 +77,7 @@ def test_executor_does_not_normalize_rope_qualified_imports(mini_pkg: Path) -> N
     )
 
 
-def test_executor_dry_run_skips_residual(mini_pkg: Path) -> None:
+def test_executor_default_verification_is_fast(mini_pkg: Path) -> None:
     result = run_refactor(
         RefactorRequest(
             operation="move_module",
@@ -87,7 +89,8 @@ def test_executor_dry_run_skips_residual(mini_pkg: Path) -> None:
     )
     assert result.status == "success"
     assert result.dry_run is True
-    assert result.verification.get("residual") == "skipped"
+    assert result.verification.get("diagnostics") == "ok"
+    assert result.verification.get("ruff") in {"ok", "skipped"}
     assert (mini_pkg / "app" / "services" / "report.py").exists()
     assert result.empty_packages == []
     assert result.leftover_replace_from == "app.services.report"

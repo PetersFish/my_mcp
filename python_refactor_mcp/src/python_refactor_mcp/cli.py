@@ -17,7 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--symbol")
     parser.add_argument("--new-name")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--verify", default="residual")
+    parser.add_argument("--verify", default="diagnostics,ruff")
     parser.add_argument("--pytest-arg", action="append", dest="pytest_args")
     parser.add_argument("--source-root")
     return parser

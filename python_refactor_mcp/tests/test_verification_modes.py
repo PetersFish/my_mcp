@@ -35,9 +35,9 @@ def test_mode_expands_when_verify_omitted() -> None:
     assert full is False
 
 
-def test_default_residual_when_both_omitted() -> None:
+def test_default_fast_when_both_omitted() -> None:
     steps, mode, full = resolve_verify_steps(verify=None, verification_mode=None)
-    assert steps == ["residual"]
+    assert steps == ["diagnostics", "ruff"]
     assert mode is None
     assert full is False
 
@@ -82,7 +82,7 @@ def test_verify_refactor_tool_present_and_runs(mini_pkg: Path) -> None:
     assert "diagnostics" in payload["verification"] or "ruff" in payload["verification"]
 
 
-def test_verify_refactor_default_is_residual_only(mini_pkg: Path) -> None:
+def test_verify_refactor_default_is_fast(mini_pkg: Path) -> None:
     from python_refactor_mcp import server as server_mod
 
     payload = server_mod.verify_refactor(
@@ -93,8 +93,9 @@ def test_verify_refactor_default_is_residual_only(mini_pkg: Path) -> None:
     assert payload["status"] in {"success", "error"}
     verification = payload["verification"]
     assert isinstance(verification, dict)
-    assert set(verification.keys()) == {"residual"}
-    assert verification["residual"] in {"ok", "failed"}
+    assert set(verification.keys()) == {"diagnostics", "ruff"}
+    assert verification["diagnostics"] in {"ok", "failed", "skipped"}
+    assert verification["ruff"] in {"ok", "failed", "skipped"}
     assert payload["details"]["verification_mode"] is None
 
 

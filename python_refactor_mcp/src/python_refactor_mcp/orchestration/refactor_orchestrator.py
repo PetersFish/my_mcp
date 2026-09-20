@@ -187,6 +187,8 @@ def run_refactor(
     metrics["files_changed"] = len(planned.changed_files)
 
     if not request.dry_run:
+        details.setdefault("lsp_session_scope", "mcp_managed")
+        details.setdefault("client_lsp_synchronized", False)
         refresh_error = _refresh_and_validate(
             request,
             service=service,
@@ -574,6 +576,8 @@ def _attach_runtime_details(manager: Any, root: Path, details: dict[str, object]
     except Exception:
         return
     details.setdefault("semantic_backend", "pyright")
+    details.setdefault("lsp_session_scope", "mcp_managed")
+    details.setdefault("client_lsp_synchronized", False)
     source = getattr(getattr(session, "runtime", None), "source", None)
     if source:
         details.setdefault("pyright_runtime", source)

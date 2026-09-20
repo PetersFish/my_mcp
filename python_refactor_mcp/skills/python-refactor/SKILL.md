@@ -61,6 +61,24 @@ In the steps below, tool names mean whichever host-specific name applies.
 
 Direct edits remain allowed for business logic and for leftovers the tool cannot rewrite.
 
+## LSP Session Isolation
+
+`python-refactor` starts and manages its own Pyright LSP session. It may use the
+target project's Pyright executable, but it does not share or synchronize LSP
+processes, document buffers, or diagnostic caches owned by the coding client.
+
+After an MCP mutation, a coding client's diagnostics may temporarily reflect a
+pre-refactor snapshot. If client diagnostics conflict with files on disk:
+
+1. Check whether the affected file appears in `changed_files`.
+2. Read the exact definition or import location from disk.
+3. Run `verify_refactor` or the target project's Pyright CLI as an independent check.
+4. If disk contents and independent verification agree, report the client diagnostic as likely stale. Do not edit correct code merely to satisfy it.
+5. If the diagnostic remains reproducible, investigate module resolution, source roots, duplicate modules, and Python environments.
+
+Do not assume that a client diagnostic is stale without checking the file and an
+independent verification signal.
+
 ## Leftover anti-patterns
 
 - Do NOT glob `**/*.{py,toml}` or similar wide patterns for leftovers.

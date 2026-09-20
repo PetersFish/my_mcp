@@ -119,7 +119,9 @@ Windows 上把上面的 `command` 换成 `.venv\\Scripts\\python.exe` 的绝对�
 
 显式传入 `verify` 时以 `verify` 为准；只传 `verification_mode` 时按模式展开步骤：`fast` = LSP diagnostics + ruff；`standard` = residual + ruff + pyright + targeted pytest；`full` = 同上但 pytest 跑全量。mutate 与 `verify_refactor` **默认都不传 mode** 时跑 `fast`；重校验（residual/pyright/pytest）优先留给目标项目本地/CI，需要时再单独调 `verify_refactor` 并显式传 `standard`/`full`（大变更 + `standard` 绑在 mutate 上易触发 MCP 超时）。
 
-`rename_symbol` / `move_symbol` 会先走 Pyright semantic preflight（definition + references）；Pyright 不可用时默认 `best_effort` 继续 Rope，`required` 则中止。模块操作不做重 preflight，apply 后做 typed LSP refresh + diagnostics。`verify=["pyright"]` 会经与 LSP 相同的 runtime fallback（含 MCP 自带 CLI）。
+`rename_symbol` / `move_symbol` 会先走 Pyright semantic preflight（definition + references）；Pyright 不可用时默认 `best_effort` 继续 Rope，`required` 则中止。模块操作不做重 preflight，apply 后做 typed LSP refresh + diagnostics。`verify=["pyright"]` 会经与 LSP 相同的 runtime fallback（含 MCP 自带 CLI）。MCP 管理自己的 Pyright LSP 会话；即使复用目标项目的 Pyright 可执行文件，也不会共享或同步 coding client 的 LSP 进程、文档 buffer 或诊断缓存。
+
+如果 coding client 在 MCP 重构后立即报告与磁盘内容冲突的诊断，先检查诊断文件是否在 `changed_files` 中，读取磁盘上的实际定义/导入位置，再运行 `verify_refactor` 或目标项目的 Pyright CLI 做独立验证。只有磁盘内容和独立验证一致时，才将该诊断标记为可能滞后；不要为了迎合未经确认的 client 诊断修改正确代码。
 
 结果是 compact JSON：`files_changed`、路径列表、`leftover_samples`、`leftover_replace_from` / `leftover_replace_to`、`next_action`、`empty_packages`、`import_issues`，以及可选的 `summary` / `metrics`（含 `duration_ms` / `result_chars`）/ `warnings` / `details` / `semantic_status`。没有 unified diff，也没有文件全文。`leftover_samples` 就是 residual 搜索结果；按 `next_action` 定点改，不要再全仓搜索。`import_issues` 使用 `file:line:column: kind: message` 格式，类型包括 `self_import`、`dangling_import` 和 `type_checking_annotation_reference`。
 

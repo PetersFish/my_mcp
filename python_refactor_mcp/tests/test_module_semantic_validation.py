@@ -116,6 +116,8 @@ def test_move_module_refresh_keeps_definition_at_new_path(sample_project: Path) 
     new_path = sample_project / "src/app/reporting/report.py"
     assert new_path.is_file()
     assert not (sample_project / "src/app/services/report.py").exists()
+    assert result.details["lsp_session_scope"] == "mcp_managed"
+    assert result.details["client_lsp_synchronized"] is False
 
     from python_refactor_mcp.adapters.pyright.process_manager import default_manager
     from python_refactor_mcp.adapters.pyright.semantic_provider import PyrightSemanticProvider

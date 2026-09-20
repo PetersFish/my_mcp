@@ -119,6 +119,8 @@ def test_setup_writes_opencode_json_and_agents_md_without_cli(tmp_path: Path) ->
     assert BLOCK_START in agents
     assert "python_refactor" in agents
     assert "Do NOT glob" in agents
+    assert "LSP Session Isolation" in agents
+    assert "coding client" in agents
 
 
 def test_setup_migrates_legacy_opencode_mcp_servers(tmp_path: Path) -> None:

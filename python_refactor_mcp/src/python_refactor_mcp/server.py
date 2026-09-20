@@ -26,6 +26,7 @@ TOOL_DESCRIPTION = (
     "Deterministic Python structural refactor via Rope. "
     "Use for module/symbol move and rename instead of multi-file import edits. "
     "project_root must be the target project's absolute path. "
+    "The MCP manages its own Pyright LSP session and does not synchronize a coding client's LSP cache. "
     "Returns a compact JSON summary with file lists, leftover_samples, "
     "leftover_replace_from/to, import_issues, next_action, and empty_packages; never diffs. "
     "After success, edit only leftover_samples in place using leftover_replace_from -> "
@@ -48,7 +49,8 @@ APPLY_CODEMOD_DESCRIPTION = (
 VERIFY_DESCRIPTION = (
     "Run verification only (no mutations). Default verification_mode is fast "
     "(omit mode or pass null). Opt into fast/standard/full or an explicit verify step "
-    "list; standard/full may hit MCP host timeouts on large change sets. Never returns "
+    "list; standard/full may hit MCP host timeouts on large change sets. This checks "
+    "the MCP-managed Pyright session, not a coding client's LSP cache. Never returns "
     "source or diffs."
 )
 

@@ -84,38 +84,45 @@ def next_action_for(
             f"Do not grep or glob.{empty_note}"
         ).strip()
 
+    client_lsp_note = (
+        " Coding-client LSP diagnostics are independent; independently verify "
+        "immediate conflicts before editing."
+    )
+
     if import_issues:
         return (
             f"Rope left {len(import_issues)} import issue(s). Fix each file:line, "
             "then run pyright/ruff."
+            f"{client_lsp_note}"
         )
 
     if not residual_checked:
         return (
             "residual was not scanned, so leftovers are unknown. Re-run with "
             'verify=["residual"] instead of searching the repo yourself.'
-            f"{empty_note}"
+            f"{empty_note}{client_lsp_note}"
         ).strip()
 
     if remaining_old_references > LEFTOVER_SAMPLES_LIMIT:
         if needle_is_dotted_path(operation):
             return (
                 "leftover_samples is truncated; rg leftover_replace_from exactly. "
-                f"Do not glob. Edit those hits{pair}.{empty_note}"
+                f"Do not glob. Edit those hits{pair}.{empty_note}{client_lsp_note}"
             ).strip()
         return (
             "leftover_samples is truncated and leftover_replace_from is a bare "
             "identifier, so do not grep it repo-wide. Edit the listed hits"
-            f"{pair}, then let Ruff/Pyright find the rest.{empty_note}"
+            f"{pair}, then let Ruff/Pyright find the rest.{empty_note}{client_lsp_note}"
         ).strip()
 
     if leftover_samples or remaining_old_references:
         return (
-            f"Edit only leftover_samples in place{pair}. Do not grep or glob.{empty_note}"
+            f"Edit only leftover_samples in place{pair}. Do not grep or glob."
+            f"{empty_note}{client_lsp_note}"
         ).strip()
 
     verify = " Run verification if not already ok."
-    return f"No leftovers. Do not search.{empty_note}{verify}".strip()
+    return f"No leftovers. Do not search.{empty_note}{verify}{client_lsp_note}".strip()
 
 
 def compact_result(

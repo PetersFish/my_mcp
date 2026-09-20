@@ -58,7 +58,9 @@ def test_compact_result_is_refactor_result() -> None:
     assert result.changed_files == []
     assert result.changed_files_truncated is False
     assert result.next_action == (
-        "No leftovers. Do not search. Run verification if not already ok."
+        "No leftovers. Do not search. Run verification if not already ok. "
+        "Coding-client LSP diagnostics are independent; independently verify "
+        "immediate conflicts before editing."
     )
 
 
@@ -73,7 +75,9 @@ def test_compact_result_next_action_with_leftovers() -> None:
         verification={"residual": "failed"},
     )
     assert result.next_action == (
-        "Edit only leftover_samples in place (app.old -> app.new). Do not grep or glob."
+        "Edit only leftover_samples in place (app.old -> app.new). Do not grep or glob. "
+        "Coding-client LSP diagnostics are independent; independently verify "
+        "immediate conflicts before editing."
     )
 
 
@@ -118,7 +122,9 @@ def test_compact_result_next_action_surfaces_import_issues() -> None:
         "app/api/reports.py:1:1: dangling_import: missing module"
     ]
     assert result.next_action == (
-        "Rope left 1 import issue(s). Fix each file:line, then run pyright/ruff."
+        "Rope left 1 import issue(s). Fix each file:line, then run pyright/ruff. "
+        "Coding-client LSP diagnostics are independent; independently verify "
+        "immediate conflicts before editing."
     )
 
 
